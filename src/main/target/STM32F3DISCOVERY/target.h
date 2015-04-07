@@ -17,7 +17,9 @@
 
 #pragma once
 
-#define TARGET_BOARD_IDENTIFIER "SDF3" // STM Discovery F3
+#define TARGET_BOARD_IDENTIFIER "SDF3" // STM Discovery F3 aka. Phase4u
+
+#define USABLE_TIMER_CHANNEL_COUNT  12
 
 #define LED0_GPIO   GPIOE
 #define LED0_PIN    Pin_8|Pin_12 // Blue LEDs - PE8/PE12
@@ -37,23 +39,33 @@
 #define BEEPER_INVERTED
 
 #define USE_SPI
-#define USE_SPI_DEVICE_1
+//#define USE_SPI_DEVICE_1
+#define USE_SPI_DEVICE_2
+
 
 #define GYRO
-#define USE_GYRO_L3GD20
+#define USE_GYRO_SPI_MPU6000
 
-#define L3GD20_SPI                      SPI1
-#define L3GD20_CS_GPIO_CLK_PERIPHERAL   RCC_AHBPeriph_GPIOE
-#define L3GD20_CS_GPIO                  GPIOE
-#define L3GD20_CS_PIN                   GPIO_Pin_3
+#define MPU6000_CS_GPIO       GPIOB
+#define MPU6000_CS_PIN        GPIO_Pin_12
+#define MPU6000_SPI_INSTANCE  SPI2
 
-#define GYRO_L3GD20_ALIGN CW90_DEG
+#define GYRO_SPI_MPU6000_ALIGN CW270_DEG
+
 
 #define ACC
-#define USE_ACC_LSM303DLHC
+#define USE_ACC_SPI_MPU6000
+
+#define ACC_SPI_MPU6000_ALIGN CW270_DEG
+
+/*#define ACC
+#define USE_ACC_LSM303DLHC*/
 
 #define MAG
 #define USE_MAG_HMC5883
+
+#define BARO
+#define USE_BARO_MS5611
 
 #define BEEPER
 #define LED0
@@ -62,37 +74,38 @@
 #define USE_VCP
 #define USE_USART1
 #define USE_USART2
-#define SERIAL_PORT_COUNT 3
+#define USE_USART3
+#define SERIAL_PORT_COUNT 4
 
 #define USE_I2C
 #define I2C_DEVICE (I2CDEV_1)
 
 #define USE_ADC
 
-#define ADC_INSTANCE                ADC1
+#define ADC_INSTANCE                ADC2
 #define ADC_AHB_PERIPHERAL          RCC_AHBPeriph_DMA1
 #define ADC_DMA_CHANNEL             DMA1_Channel1
 
-#define VBAT_ADC_GPIO               GPIOC
-#define VBAT_ADC_GPIO_PIN           GPIO_Pin_0
-#define VBAT_ADC_CHANNEL            ADC_Channel_6
+#define VBAT_ADC_GPIO               GPIOA
+#define VBAT_ADC_GPIO_PIN           GPIO_Pin_5
+#define VBAT_ADC_CHANNEL            ADC_Channel_2
 
-#define CURRENT_METER_ADC_GPIO      GPIOC
-#define CURRENT_METER_ADC_GPIO_PIN  GPIO_Pin_1
-#define CURRENT_METER_ADC_CHANNEL   ADC_Channel_7
+#define CURRENT_METER_ADC_GPIO      GPIOB
+#define CURRENT_METER_ADC_GPIO_PIN  GPIO_Pin_2
+#define CURRENT_METER_ADC_CHANNEL   ADC_Channel_12
 
-#define RSSI_ADC_GPIO               GPIOC
+/*#define RSSI_ADC_GPIO               GPIOC
 #define RSSI_ADC_GPIO_PIN           GPIO_Pin_2
 #define RSSI_ADC_CHANNEL            ADC_Channel_8
 
 #define EXTERNAL1_ADC_GPIO          GPIOC
 #define EXTERNAL1_ADC_GPIO_PIN      GPIO_Pin_3
-#define EXTERNAL1_ADC_CHANNEL       ADC_Channel_9
+#define EXTERNAL1_ADC_CHANNEL       ADC_Channel_9*/
 
 #define BLACKBOX
 #define GPS
-#define LED_STRIP
-#define LED_STRIP_TIMER TIM16
+//#define LED_STRIP
+//#define LED_STRIP_TIMER TIM16
 #define TELEMETRY
 #define SERIAL_RX
 #define AUTOTUNE

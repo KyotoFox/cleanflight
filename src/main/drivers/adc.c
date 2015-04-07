@@ -25,7 +25,7 @@
 
 #include "adc.h"
 
-//#define DEBUG_ADC_CHANNELS
+#define DEBUG_ADC_CHANNELS
 
 #ifdef USE_ADC
 adc_config_t adcConfig[ADC_CHANNEL_COUNT];

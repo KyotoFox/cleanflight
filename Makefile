@@ -465,10 +465,9 @@ NAZE32PRO_SRC	 = \
 
 STM32F3DISCOVERY_COMMON_SRC	 = \
 		   $(STM32F30x_COMMON_SRC) \
-		   drivers/accgyro_l3gd20.c \
-		   drivers/accgyro_l3gd20.c \
 		   drivers/accgyro_lsm303dlhc.c \
 		   drivers/compass_hmc5883l.c \
+		   drivers/accgyro_spi_mpu6000.c \
 		   $(VCP_SRC)
 
 STM32F3DISCOVERY_SRC	 = \

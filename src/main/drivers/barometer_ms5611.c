@@ -27,7 +27,7 @@
 #include "bus_i2c.h"
 
 // MS5611, Standard address 0x77
-#define MS5611_ADDR                 0x77
+#define MS5611_ADDR                 0x76
 
 #define CMD_RESET               0x1E // ADC reset command
 #define CMD_ADC_READ            0x00 // ADC read command
