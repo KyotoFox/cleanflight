@@ -25,14 +25,14 @@ typedef enum {
 
 typedef enum {
     FUNCTION_NONE                = 0,
-    FUNCTION_MSP                 = (1 << 0),
-    FUNCTION_GPS                 = (1 << 1),
-    FUNCTION_TELEMETRY_FRSKY     = (1 << 2),
-    FUNCTION_TELEMETRY_HOTT      = (1 << 3),
-    FUNCTION_TELEMETRY_MSP       = (1 << 4),
-    FUNCTION_TELEMETRY_SMARTPORT = (1 << 5),
-    FUNCTION_RX_SERIAL           = (1 << 6),
-    FUNCTION_BLACKBOX            = (1 << 7)
+    FUNCTION_MSP                 = (1 << 0), // 1
+    FUNCTION_GPS                 = (1 << 1), // 2
+    FUNCTION_TELEMETRY_FRSKY     = (1 << 2), // 4
+    FUNCTION_TELEMETRY_HOTT      = (1 << 3), // 8
+    FUNCTION_TELEMETRY_MSP       = (1 << 4), // 16
+    FUNCTION_TELEMETRY_SMARTPORT = (1 << 5), // 32
+    FUNCTION_RX_SERIAL           = (1 << 6), // 64
+    FUNCTION_BLACKBOX            = (1 << 7)  // 128
 } serialPortFunction_e;
 
 typedef enum {
@@ -41,13 +41,16 @@ typedef enum {
     BAUD_19200,
     BAUD_38400,
     BAUD_57600,
-    BAUD_115200
+    BAUD_115200,
+    BAUD_230400,
+    BAUD_250000,
 } baudRate_e;
 
 extern uint32_t baudRates[];
 
 // serial port identifiers are now fixed, these values are used by MSP commands.
 typedef enum {
+    SERIAL_PORT_NONE = -1,
     SERIAL_PORT_USART1 = 0,
     SERIAL_PORT_USART2,
     SERIAL_PORT_USART3,
@@ -58,7 +61,7 @@ typedef enum {
     SERIAL_PORT_IDENTIFIER_MAX = SERIAL_PORT_SOFTSERIAL2
 } serialPortIdentifier_e;
 
-serialPortIdentifier_e serialPortIdentifiers[SERIAL_PORT_COUNT];
+extern serialPortIdentifier_e serialPortIdentifiers[SERIAL_PORT_COUNT];
 
 //
 // runtime
@@ -112,7 +115,7 @@ serialPort_t *openSerialPort(
     serialReceiveCallbackPtr callback,
     uint32_t baudrate,
     portMode_t mode,
-    serialInversion_e inversion
+    portOptions_t options
 );
 void closeSerialPort(serialPort_t *serialPort);
 

@@ -73,7 +73,6 @@
 #define BRUSHED_MOTORS_PWM_RATE 16000
 #define BRUSHLESS_MOTORS_PWM_RATE 400
 
-void setPIDController(int type); // FIXME PID code needs to be in flight_pid.c/h
 void mixerUseConfigs(
 #ifdef USE_SERVOS
         servoParam_t *servoConfToUse,
@@ -89,24 +88,44 @@ void useRcControlsConfig(modeActivationCondition_t *modeActivationConditions, es
 
 #define FLASH_TO_RESERVE_FOR_CONFIG 0x800
 
-#ifndef FLASH_PAGE_COUNT
-#ifdef STM32F303xC
-#define FLASH_PAGE_COUNT 128
-#define FLASH_PAGE_SIZE                 ((uint16_t)0x800)
+#if !defined(FLASH_SIZE)
+#error "Flash size not defined for target. (specify in KB)"
 #endif
 
-#ifdef STM32F10X_MD
-#define FLASH_PAGE_COUNT 128
-#define FLASH_PAGE_SIZE                 ((uint16_t)0x400)
+
+#ifndef FLASH_PAGE_SIZE
+    #ifdef STM32F303xC
+        #define FLASH_PAGE_SIZE                 ((uint16_t)0x800)
+    #endif
+
+    #ifdef STM32F10X_MD
+        #define FLASH_PAGE_SIZE                 ((uint16_t)0x400)
+    #endif
+
+    #ifdef STM32F10X_HD
+        #define FLASH_PAGE_SIZE                 ((uint16_t)0x800)
+    #endif
 #endif
 
-#ifdef STM32F10X_HD
-#define FLASH_PAGE_COUNT 128
-#define FLASH_PAGE_SIZE                 ((uint16_t)0x800)
-#endif
+#if !defined(FLASH_SIZE) && !defined(FLASH_PAGE_COUNT)
+    #ifdef STM32F10X_MD
+        #define FLASH_PAGE_COUNT 128
+    #endif
+
+    #ifdef STM32F10X_HD
+        #define FLASH_PAGE_COUNT 128
+    #endif
 #endif
 
-#if !defined(FLASH_PAGE_COUNT) || !defined(FLASH_PAGE_SIZE)
+#if defined(FLASH_SIZE)
+#define FLASH_PAGE_COUNT ((FLASH_SIZE * 0x400) / FLASH_PAGE_SIZE)
+#endif
+
+#if !defined(FLASH_PAGE_SIZE)
+#error "Flash page size not defined for target."
+#endif
+
+#if !defined(FLASH_PAGE_COUNT)
 #error "Flash page count not defined for target."
 #endif
 
@@ -119,7 +138,7 @@ profile_t *currentProfile;
 static uint8_t currentControlRateProfileIndex = 0;
 controlRateConfig_t *currentControlRateProfile;
 
-static const uint8_t EEPROM_CONF_VERSION = 93;
+static const uint8_t EEPROM_CONF_VERSION = 95;
 
 static void resetAccelerometerTrims(flightDynamicsTrims_t *accelerometerTrims)
 {
@@ -221,12 +240,14 @@ void resetFlight3DConfig(flight3DConfig_t *flight3DConfig)
 
 void resetTelemetryConfig(telemetryConfig_t *telemetryConfig)
 {
-    telemetryConfig->telemetry_inversion = SERIAL_NOT_INVERTED;
+    telemetryConfig->telemetry_inversion = 0;
     telemetryConfig->telemetry_switch = 0;
     telemetryConfig->gpsNoFixLatitude = 0;
     telemetryConfig->gpsNoFixLongitude = 0;
     telemetryConfig->frsky_coordinate_format = FRSKY_FORMAT_DMS;
     telemetryConfig->frsky_unit = FRSKY_UNIT_METRICS;
+    telemetryConfig->frsky_vfas_precision = 0;
+    telemetryConfig->hottAlarmSoundInterval = 5;
 }
 
 void resetBatteryConfig(batteryConfig_t *batteryConfig)
@@ -275,12 +296,15 @@ void resetSerialConfig(serialConfig_t *serialConfig)
 static void resetControlRateConfig(controlRateConfig_t *controlRateConfig) {
     controlRateConfig->rcRate8 = 90;
     controlRateConfig->rcExpo8 = 65;
-    controlRateConfig->rollPitchRate = 0;
-    controlRateConfig->yawRate = 0;
     controlRateConfig->thrMid8 = 50;
     controlRateConfig->thrExpo8 = 0;
     controlRateConfig->dynThrPID = 0;
     controlRateConfig->tpa_breakpoint = 1500;
+
+    for (uint8_t axis = 0; axis < FLIGHT_DYNAMICS_INDEX_COUNT; axis++) {
+        controlRateConfig->rates[axis] = 0;
+    }
+
 }
 
 void resetRcControlsConfig(rcControlsConfig_t *rcControlsConfig) {
@@ -288,6 +312,16 @@ void resetRcControlsConfig(rcControlsConfig_t *rcControlsConfig) {
     rcControlsConfig->yaw_deadband = 0;
     rcControlsConfig->alt_hold_deadband = 40;
     rcControlsConfig->alt_hold_fast_change = 1;
+}
+
+void resetMixerConfig(mixerConfig_t *mixerConfig) {
+    mixerConfig->pid_at_min_throttle = 1;
+    mixerConfig->yaw_direction = 1;
+#ifdef USE_SERVOS
+    mixerConfig->tri_unarmed_servo = 1;
+    mixerConfig->servo_lowpass_freq = 400;
+    mixerConfig->servo_lowpass_enable = 0;
+#endif
 }
 
 uint8_t getCurrentProfile(void)
@@ -336,6 +370,7 @@ static void resetConf(void)
     featureSet(FEATURE_RX_PPM);
 #endif
     featureSet(FEATURE_VBAT);
+    featureSet(FEATURE_FAILSAFE);
 
     // global settings
     masterConfig.current_profile_index = 0;     // default profile
@@ -375,6 +410,8 @@ static void resetConf(void)
     masterConfig.disarm_kill_switch = 1;
     masterConfig.auto_disarm_delay = 5;
     masterConfig.small_angle = 25;
+
+    resetMixerConfig(&masterConfig.mixerConfig);
 
     masterConfig.airplaneConfig.flaps_speed = 0;
     masterConfig.airplaneConfig.fixedwing_althold_dir = 1;
@@ -433,7 +470,7 @@ static void resetConf(void)
     // Failsafe Variables
     currentProfile->failsafeConfig.failsafe_delay = 10;              // 1sec
     currentProfile->failsafeConfig.failsafe_off_delay = 200;         // 20sec
-    currentProfile->failsafeConfig.failsafe_throttle = 1200;         // decent default which should always be below hover throttle for people.
+    currentProfile->failsafeConfig.failsafe_throttle = 1000;         // default throttle off.
     currentProfile->failsafeConfig.failsafe_min_usec = 985;          // any of first 4 channels below this value will trigger failsafe
     currentProfile->failsafeConfig.failsafe_max_usec = 2115;         // any of first 4 channels above this value will trigger failsafe
 
@@ -446,11 +483,6 @@ static void resetConf(void)
         currentProfile->servoConf[i].rate = servoRates[i];
         currentProfile->servoConf[i].forwardFromChannel = CHANNEL_FORWARDING_DISABLED;
     }
-
-    currentProfile->mixerConfig.yaw_direction = 1;
-    currentProfile->mixerConfig.tri_unarmed_servo = 1;
-    currentProfile->mixerConfig.servo_lowpass_freq = 400;
-    currentProfile->mixerConfig.servo_lowpass_enable = 0;
 
     // gimbal
     currentProfile->gimbalConfig.gimbal_flags = GIMBAL_NORMAL;
@@ -480,10 +512,11 @@ static void resetConf(void)
     featureSet(FEATURE_RX_SERIAL);
     featureSet(FEATURE_MOTOR_STOP);
     featureSet(FEATURE_FAILSAFE);
-    featureClear(FEATURE_VBAT);
 #ifdef ALIENWIIF3
     masterConfig.serialConfig.portConfigs[2].functionMask = FUNCTION_RX_SERIAL;
+    masterConfig.batteryConfig.vbatscale = 20;
 #else
+    featureClear(FEATURE_VBAT);
     masterConfig.serialConfig.portConfigs[1].functionMask = FUNCTION_RX_SERIAL;
 #endif
     masterConfig.rxConfig.serialrx_provider = 1;
@@ -499,9 +532,9 @@ static void resetConf(void)
     currentProfile->failsafeConfig.failsafe_off_delay = 0;
     currentProfile->failsafeConfig.failsafe_throttle = 1000;
     currentControlRateProfile->rcRate8 = 130;
-    currentControlRateProfile->rollPitchRate = 20;
-    currentControlRateProfile->yawRate = 60;
-    currentControlRateProfile->yawRate = 100;
+    currentControlRateProfile->rates[FD_PITCH] = 20;
+    currentControlRateProfile->rates[FD_ROLL] = 20;
+    currentControlRateProfile->rates[FD_YAW] = 100;
     parseRcChannels("TAER1234", &masterConfig.rxConfig);
 
     //  { 1.0f, -0.5f,  1.0f, -1.0f },          // REAR_R
@@ -626,7 +659,7 @@ void activateConfig(void)
     useTelemetryConfig(&masterConfig.telemetryConfig);
 #endif
 
-    setPIDController(currentProfile->pidProfile.pidController);
+    pidSetController(currentProfile->pidProfile.pidController);
 
 #ifdef GPS
     gpsUseProfile(&currentProfile->gpsProfile);
@@ -643,7 +676,7 @@ void activateConfig(void)
 #endif
         &masterConfig.flight3DConfig,
         &masterConfig.escAndServoConfig,
-        &currentProfile->mixerConfig,
+        &masterConfig.mixerConfig,
         &masterConfig.airplaneConfig,
         &masterConfig.rxConfig
     );
@@ -717,16 +750,12 @@ void validateAndFixConfig(void)
 
 #if defined(LED_STRIP) && (defined(USE_SOFTSERIAL1) || defined(USE_SOFTSERIAL2))
     if (feature(FEATURE_SOFTSERIAL) && (
+            0
 #ifdef USE_SOFTSERIAL1
-            (LED_STRIP_TIMER == SOFTSERIAL_1_TIMER)
-#else
-            0
+            || (LED_STRIP_TIMER == SOFTSERIAL_1_TIMER)
 #endif
-            ||
 #ifdef USE_SOFTSERIAL2
-            (LED_STRIP_TIMER == SOFTSERIAL_2_TIMER)
-#else
-            0
+            || (LED_STRIP_TIMER == SOFTSERIAL_2_TIMER)
 #endif
     )) {
         // led strip needs the same timer as softserial
@@ -749,6 +778,12 @@ void validateAndFixConfig(void)
 #if defined(CC3D) && defined(DISPLAY) && defined(USE_USART3)
     if (doesConfigurationUsePort(SERIAL_PORT_USART3) && feature(FEATURE_DISPLAY)) {
         featureClear(FEATURE_DISPLAY);
+    }
+#endif
+
+#if defined(SPRACINGF3) && defined(SONAR)
+    if (feature(FEATURE_RX_PARALLEL_PWM) && feature(FEATURE_SONAR) ) {
+        featureClear(FEATURE_SONAR);
     }
 #endif
 

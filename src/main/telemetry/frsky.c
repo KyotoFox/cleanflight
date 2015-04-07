@@ -109,6 +109,7 @@ extern int16_t telemTemperature1; // FIXME dependency on mw.c
 #define ID_ACC_X              0x24
 #define ID_ACC_Y              0x25
 #define ID_ACC_Z              0x26
+#define ID_VOLTAGE_AMP        0x39
 #define ID_VOLTAGE_AMP_BP     0x3A
 #define ID_VOLTAGE_AMP_AP     0x3B
 #define ID_CURRENT            0x28
@@ -177,6 +178,7 @@ static void sendBaro(void)
     serialize16(ABS(BaroAlt % 100));
 }
 
+#ifdef GPS
 static void sendGpsAltitude(void)
 {
     uint16_t altitude = GPS_altitude;
@@ -189,13 +191,17 @@ static void sendGpsAltitude(void)
     sendDataHead(ID_GPS_ALTIDUTE_AP);
     serialize16(0);
 }
+#endif
 
-
-static void sendThrottleOrBatterySizeAsRpm(void)
+static void sendThrottleOrBatterySizeAsRpm(rxConfig_t *rxConfig, uint16_t deadband3d_throttle)
 {
+    uint16_t throttleForRPM = rcCommand[THROTTLE] / BLADE_NUMBER_DIVIDER;
     sendDataHead(ID_RPM);
     if (ARMING_FLAG(ARMED)) {
-        serialize16(rcCommand[THROTTLE] / BLADE_NUMBER_DIVIDER);
+        throttleStatus_e throttleStatus = calculateThrottleStatus(rxConfig, deadband3d_throttle);
+        if (throttleStatus == THROTTLE_LOW && feature(FEATURE_MOTOR_STOP))
+                    throttleForRPM = 0;
+        serialize16(throttleForRPM);
     } else {
         serialize16((batteryConfig->batteryCapacity / BLADE_NUMBER_DIVIDER));
     }
@@ -212,6 +218,7 @@ static void sendTemperature1(void)
 #endif
 }
 
+#ifdef GPS
 static void sendSatalliteSignalQualityAsTemperature2(void)
 {
     uint16_t satellite = GPS_numSat;
@@ -241,6 +248,7 @@ static void sendSpeed(void)
     sendDataHead(ID_GPS_SPEED_AP);
     serialize16(0); //Not dipslayed
 }
+#endif
 
 static void sendTime(void)
 {
@@ -331,7 +339,6 @@ static void sendVario(void)
 static void sendVoltage(void)
 {
     static uint16_t currentCell = 0;
-    uint16_t cellNumber;
     uint32_t cellVoltage;
     uint16_t payload;
 
@@ -342,16 +349,14 @@ static void sendVoltage(void)
      *  l: Low voltage bits
      *  h: High voltage bits
      *  c: Cell number (starting at 0)
+     *
+     * The actual value sent for cell voltage has resolution of 0.002 volts
+     * Since vbat has resolution of 0.1 volts it has to be multiplied by 50
      */
-    cellVoltage = vbat / batteryCellCount;
-
-    // Map to 12 bit range
-    cellVoltage = (cellVoltage * 2100) / 42;
-
-    cellNumber = currentCell % batteryCellCount;
+    cellVoltage = ((uint32_t)vbat * 100 + batteryCellCount) / (batteryCellCount * 2);
 
     // Cell number is at bit 9-12
-    payload = (cellNumber << 4);
+    payload = (currentCell << 4);
 
     // Lower voltage bits are at bit 0-8
     payload |= ((cellVoltage & 0x0ff) << 8);
@@ -371,12 +376,20 @@ static void sendVoltage(void)
  */
 static void sendVoltageAmp(void)
 {
-    uint16_t voltage = (vbat * 110) / 21;
+    if (telemetryConfig->frsky_vfas_precision == FRSKY_VFAS_PRECISION_HIGH) {
+        /*
+         * Use new ID 0x39 to send voltage directly in 0.1 volts resolution
+         */
+        sendDataHead(ID_VOLTAGE_AMP);
+        serialize16(vbat);
+    } else {
+        uint16_t voltage = (vbat * 110) / 21;
 
-    sendDataHead(ID_VOLTAGE_AMP_BP);
-    serialize16(voltage / 100);
-    sendDataHead(ID_VOLTAGE_AMP_AP);
-    serialize16(((voltage % 100) + 5) / 10);
+        sendDataHead(ID_VOLTAGE_AMP_BP);
+        serialize16(voltage / 100);
+        sendDataHead(ID_VOLTAGE_AMP_AP);
+        serialize16(((voltage % 100) + 5) / 10);
+    }
 }
 
 static void sendAmperage(void)
@@ -424,7 +437,7 @@ void configureFrSkyTelemetryPort(void)
         return;
     }
 
-    frskyPort = openSerialPort(portConfig->identifier, FUNCTION_TELEMETRY_FRSKY, NULL, FRSKY_BAUDRATE, FRSKY_INITIAL_PORT_MODE, telemetryConfig->telemetry_inversion);
+    frskyPort = openSerialPort(portConfig->identifier, FUNCTION_TELEMETRY_FRSKY, NULL, FRSKY_BAUDRATE, FRSKY_INITIAL_PORT_MODE, telemetryConfig->telemetry_inversion ? SERIAL_INVERTED : SERIAL_NOT_INVERTED);
     if (!frskyPort) {
         return;
     }
@@ -451,7 +464,7 @@ void checkFrSkyTelemetryState(void)
         freeFrSkyTelemetryPort();
 }
 
-void handleFrSkyTelemetry(void)
+void handleFrSkyTelemetry(rxConfig_t *rxConfig, uint16_t deadband3d_throttle)
 {
     if (!frskyTelemetryEnabled) {
         return;
@@ -482,7 +495,7 @@ void handleFrSkyTelemetry(void)
 
     if ((cycleNum % 8) == 0) {      // Sent every 1s
         sendTemperature1();
-        sendThrottleOrBatterySizeAsRpm();
+        sendThrottleOrBatterySizeAsRpm(rxConfig, deadband3d_throttle);
 
         if (feature(FEATURE_VBAT)) {
             sendVoltage();

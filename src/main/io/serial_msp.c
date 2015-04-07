@@ -131,7 +131,7 @@ void useRcControlsConfig(modeActivationCondition_t *modeActivationConditions, es
 #define MSP_PROTOCOL_VERSION                0
 
 #define API_VERSION_MAJOR                   1 // increment when major changes are made
-#define API_VERSION_MINOR                   6 // increment when any change is made, reset to zero when major changes are released after changing API_VERSION_MAJOR
+#define API_VERSION_MINOR                   8 // increment when any change is made, reset to zero when major changes are released after changing API_VERSION_MAJOR
 
 #define API_VERSION_LENGTH                  2
 
@@ -217,6 +217,17 @@ const char *boardIdentifier = TARGET_BOARD_IDENTIFIER;
 
 #define MSP_PID_CONTROLLER              59
 #define MSP_SET_PID_CONTROLLER          60
+
+#define MSP_ARMING_CONFIG               61 //out message         Returns auto_disarm_delay and disarm_kill_switch parameters
+#define MSP_SET_ARMING_CONFIG           62 //in message          Sets auto_disarm_delay and disarm_kill_switch parameters
+
+#define MSP_DATAFLASH_SUMMARY           70 //out message - get description of dataflash chip
+#define MSP_DATAFLASH_READ              71 //out message - get content of dataflash chip
+#define MSP_DATAFLASH_ERASE             72 //in message - erase dataflash chip
+
+#define MSP_LOOP_TIME                   73 //out message         Returns FC cycle time i.e looptime parameter
+#define MSP_SET_LOOP_TIME               74 //in message          Sets FC cycle time i.e looptime parameter
+
 //
 // Baseflight MSP commands (if enabled they exist in Cleanflight)
 //
@@ -225,17 +236,13 @@ const char *boardIdentifier = TARGET_BOARD_IDENTIFIER;
 
 // FIXME - Provided for backwards compatibility with configurator code until configurator is updated.
 // DEPRECATED - DO NOT USE "MSP_BF_CONFIG" and MSP_SET_BF_CONFIG.  In Cleanflight, isolated commands already exist and should be used instead.
-#define MSP_BF_CONFIG                      66 //out message baseflight-specific settings that aren't covered elsewhere
-#define MSP_SET_BF_CONFIG                  67 //in message baseflight-specific settings save
+#define MSP_BF_CONFIG                   66 //out message baseflight-specific settings that aren't covered elsewhere
+#define MSP_SET_BF_CONFIG               67 //in message baseflight-specific settings save
 
 #define MSP_REBOOT                      68 //in message reboot settings
 
 // DEPRECATED - Use MSP_BUILD_INFO instead
 #define MSP_BF_BUILD_INFO               69 //out message build date as well as some space for future expansion
-
-#define MSP_DATAFLASH_SUMMARY           70 //out message - get description of dataflash chip
-#define MSP_DATAFLASH_READ              71 //out message - get content of dataflash chip
-#define MSP_DATAFLASH_ERASE             72 //in message - erase dataflash chip
 
 //
 // Multwii original MSP commands
@@ -882,22 +889,33 @@ static bool processOutCommand(uint8_t cmdMSP)
     case MSP_ANALOG:
         headSerialReply(7);
         serialize8((uint8_t)constrain(vbat, 0, 255));
-        serialize16((uint16_t)constrain(mAhDrawn, 0, 0xFFFF)); // milliamphours drawn from battery
+        serialize16((uint16_t)constrain(mAhDrawn, 0, 0xFFFF)); // milliamp hours drawn from battery
         serialize16(rssi);
         if(masterConfig.batteryConfig.multiwiiCurrentMeterOutput) {
             serialize16((uint16_t)constrain(amperage * 10, 0, 0xFFFF)); // send amperage in 0.001 A steps. Negative range is truncated to zero
         } else
             serialize16((int16_t)constrain(amperage, -0x8000, 0x7FFF)); // send amperage in 0.01 A steps, range is -320A to 320A
         break;
+    case MSP_ARMING_CONFIG:
+        headSerialReply(2);
+        serialize8(masterConfig.auto_disarm_delay); 
+        serialize8(masterConfig.disarm_kill_switch);
+        break;
+    case MSP_LOOP_TIME:
+        headSerialReply(2);
+        serialize16(masterConfig.looptime);
+        break;
     case MSP_RC_TUNING:
-        headSerialReply(7);
+        headSerialReply(10);
         serialize8(currentControlRateProfile->rcRate8);
         serialize8(currentControlRateProfile->rcExpo8);
-        serialize8(currentControlRateProfile->rollPitchRate);
-        serialize8(currentControlRateProfile->yawRate);
+        for (i = 0 ; i < 3; i++) {
+            serialize8(currentControlRateProfile->rates[i]); // R,P,Y see flight_dynamics_index_t
+        }
         serialize8(currentControlRateProfile->dynThrPID);
         serialize8(currentControlRateProfile->thrMid8);
         serialize8(currentControlRateProfile->thrExpo8);
+        serialize16(currentControlRateProfile->tpa_breakpoint);
         break;
     case MSP_PID:
         headSerialReply(3 * PID_ITEM_COUNT);
@@ -978,7 +996,7 @@ static bool processOutCommand(uint8_t cmdMSP)
         }
         break;
     case MSP_MISC:
-        headSerialReply(2 * 6 + 4 + 2 + 4);
+        headSerialReply(2 * 5 + 3 + 3 + 2 + 4);
         serialize16(masterConfig.rxConfig.midrc);
 
         serialize16(masterConfig.escAndServoConfig.minthrottle);
@@ -1219,6 +1237,7 @@ static bool processInCommand(void)
 {
     uint32_t i;
     uint16_t tmp;
+    uint8_t rate;
 #ifdef GPS
     uint8_t wp_no;
     int32_t lat = 0, lon = 0, alt = 0;
@@ -1254,9 +1273,16 @@ static bool processInCommand(void)
         currentProfile->accelerometerTrims.values.pitch = read16();
         currentProfile->accelerometerTrims.values.roll  = read16();
         break;
+    case MSP_SET_ARMING_CONFIG:
+        masterConfig.auto_disarm_delay = read8();
+        masterConfig.disarm_kill_switch = read8();
+        break;
+    case MSP_SET_LOOP_TIME:
+        masterConfig.looptime = read16();
+        break;
     case MSP_SET_PID_CONTROLLER:
         currentProfile->pidProfile.pidController = read8();
-        setPIDController(currentProfile->pidProfile.pidController);
+        pidSetController(currentProfile->pidProfile.pidController);
         break;
     case MSP_SET_PID:
         if (IS_PID_CONTROLLER_FP_BASED(currentProfile->pidProfile.pidController)) {
@@ -1325,13 +1351,21 @@ static bool processInCommand(void)
         break;
 
     case MSP_SET_RC_TUNING:
-        currentControlRateProfile->rcRate8 = read8();
-        currentControlRateProfile->rcExpo8 = read8();
-        currentControlRateProfile->rollPitchRate = read8();
-        currentControlRateProfile->yawRate = read8();
-        currentControlRateProfile->dynThrPID = read8();
-        currentControlRateProfile->thrMid8 = read8();
-        currentControlRateProfile->thrExpo8 = read8();
+        if (currentPort->dataSize == 10) {//allow for tpa_breakpoint
+            currentControlRateProfile->rcRate8 = read8();
+            currentControlRateProfile->rcExpo8 = read8();
+            for (i = 0; i < 3; i++) {
+                rate = read8();
+                currentControlRateProfile->rates[i] = MIN(rate, i == FD_YAW ? CONTROL_RATE_CONFIG_YAW_RATE_MAX : CONTROL_RATE_CONFIG_ROLL_PITCH_RATE_MAX);
+            }
+            rate = read8();
+            currentControlRateProfile->dynThrPID = MIN(rate, CONTROL_RATE_CONFIG_TPA_MAX);
+            currentControlRateProfile->thrMid8 = read8();
+            currentControlRateProfile->thrExpo8 = read8();
+            currentControlRateProfile->tpa_breakpoint = read16();
+        } else {
+            headSerialError(0);
+        }
         break;
     case MSP_SET_MISC:
         tmp = read16();

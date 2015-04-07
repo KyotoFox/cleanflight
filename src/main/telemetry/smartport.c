@@ -134,7 +134,7 @@ const uint16_t frSkyDataIdTable[] = {
 
 #define __USE_C99_MATH // for roundf()
 #define SMARTPORT_BAUD 57600
-#define SMARTPORT_UART_MODE MODE_BIDIR
+#define SMARTPORT_UART_MODE MODE_RXTX
 #define SMARTPORT_SERVICE_DELAY_MS 5 // telemetry requests comes in at roughly 12 ms intervals, keep this under that
 #define SMARTPORT_NOT_CONNECTED_TIMEOUT_MS 7000
 
@@ -162,10 +162,7 @@ static void smartPortDataReceive(uint16_t c)
     if (lastChar == FSSP_START_STOP) {
         smartPortState = SPSTATE_WORKING;
         smartPortLastRequestTime = now;
-        if ((c == FSSP_SENSOR_ID1) ||
-            (c == FSSP_SENSOR_ID2) ||
-            (c == FSSP_SENSOR_ID3) ||
-            (c == FSSP_SENSOR_ID4)) {
+        if (c == FSSP_SENSOR_ID1) {
             smartPortHasRequest = 1;
             // we only responde to these IDs
             // the X4R-SB does send other IDs, we ignore them, but take note of the time
@@ -229,11 +226,19 @@ void freeSmartPortTelemetryPort(void)
 
 void configureSmartPortTelemetryPort(void)
 {
+    portOptions_t portOptions;
+
     if (!portConfig) {
         return;
     }
 
-    smartPortSerialPort = openSerialPort(portConfig->identifier, FUNCTION_TELEMETRY_SMARTPORT, NULL, SMARTPORT_BAUD, SMARTPORT_UART_MODE, telemetryConfig->telemetry_inversion);
+    portOptions = SERIAL_BIDIR;
+
+    if (telemetryConfig->telemetry_inversion) {
+        portOptions |= SERIAL_INVERTED;
+    }
+
+    smartPortSerialPort = openSerialPort(portConfig->identifier, FUNCTION_TELEMETRY_SMARTPORT, NULL, SMARTPORT_BAUD, SMARTPORT_UART_MODE, portOptions);
 
     if (!smartPortSerialPort) {
         return;
@@ -304,17 +309,18 @@ void handleSmartPortTelemetry(void)
         smartPortIdCnt++;
 
         int32_t tmpi;
-        uint32_t tmpui;
         static uint8_t t1Cnt = 0;
 
         switch(id) {
+#ifdef GPS
             case FSSP_DATAID_SPEED      :
                 if (sensors(SENSOR_GPS) && STATE(GPS_FIX)) {
-                    tmpui = (GPS_speed * 36 + 36 / 2) / 100;
+                    uint32_t tmpui = (GPS_speed * 36 + 36 / 2) / 100;
                     smartPortSendPackage(id, tmpui); // given in 0.1 m/s, provide in KM/H
                     smartPortHasRequest = 0;
                 }
                 break;
+#endif
             case FSSP_DATAID_VFAS       :
                 smartPortSendPackage(id, vbat * 83); // supposedly given in 0.1V, unknown requested unit
                 // multiplying by 83 seems to make Taranis read correctly
@@ -335,9 +341,10 @@ void handleSmartPortTelemetry(void)
                 break;
             //case FSSP_DATAID_ADC1       :
             //case FSSP_DATAID_ADC2       :
+#ifdef GPS
             case FSSP_DATAID_LATLONG    :
                 if (sensors(SENSOR_GPS) && STATE(GPS_FIX)) {
-                    tmpui = 0;
+                    uint32_t tmpui = 0;
                     // the same ID is sent twice, one for longitude, one for latitude
                     // the MSB of the sent uint32_t helps FrSky keep track
                     // the even/odd bit of our counter helps us keep track
@@ -360,6 +367,7 @@ void handleSmartPortTelemetry(void)
                     smartPortHasRequest = 0;
                 }
                 break;
+#endif
             //case FSSP_DATAID_CAP_USED   :
             case FSSP_DATAID_VARIO      :
                 smartPortSendPackage(id, vario); // unknown given unit but requested in 100 = 1m/s
@@ -431,21 +439,25 @@ void handleSmartPortTelemetry(void)
                 break;
             case FSSP_DATAID_T2         :
                 if (sensors(SENSOR_GPS)) {
+#ifdef GPS
                     // provide GPS lock status
                     smartPortSendPackage(id, (STATE(GPS_FIX) ? 1000 : 0) + (STATE(GPS_FIX_HOME) ? 2000 : 0) + GPS_numSat);
                     smartPortHasRequest = 0;
+#endif
                 }
                 else {
                     smartPortSendPackage(id, 0);
                     smartPortHasRequest = 0;
                 }
                 break;
+#ifdef GPS
             case FSSP_DATAID_GPS_ALT    :
                 if (sensors(SENSOR_GPS) && STATE(GPS_FIX)) {
                     smartPortSendPackage(id, GPS_altitude * 1000); // given in 0.1m , requested in 100 = 1m
                     smartPortHasRequest = 0;
                 }
                 break;
+#endif
             default:
                 break;
                 // if nothing is sent, smartPortHasRequest isn't cleared, we already incremented the counter, just wait for the next loop

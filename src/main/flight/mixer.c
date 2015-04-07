@@ -27,12 +27,11 @@
 #include "common/maths.h"
 
 #include "drivers/system.h"
-#include "drivers/gpio.h"
-#include "drivers/timer.h"
 #include "drivers/pwm_output.h"
 #include "drivers/pwm_mapping.h"
 #include "drivers/sensor.h"
 #include "drivers/accgyro.h"
+#include "drivers/system.h"
 
 #include "rx/rx.h"
 
@@ -77,7 +76,7 @@ static mixerMode_e currentMixerMode;
 static gimbalConfig_t *gimbalConfig;
 int16_t servo[MAX_SUPPORTED_SERVOS];
 static int useServo;
-static uint8_t servoCount;
+STATIC_UNIT_TESTED uint8_t servoCount;
 static servoParam_t *servoConf;
 static lowpass_t lowpassFilters[MAX_SUPPORTED_SERVOS];
 #endif
@@ -202,9 +201,9 @@ static const motorMixer_t mixerDualcopter[] = {
     { 1.0f,  0.0f,  0.0f,  1.0f },          // RIGHT
 };
 
-// Keep this synced with MultiType struct in mw.h!
+// Keep synced with mixerMode_e
 const mixer_t mixers[] = {
-//    Mo Se Mixtable
+    // motors, servos, motor mixer
     { 0, 0, NULL },                // entry 0
     { 3, 1, mixerTri },            // MIXER_TRI
     { 4, 0, mixerQuadP },          // MIXER_QUADP
@@ -225,7 +224,7 @@ const mixer_t mixers[] = {
     { 4, 0, mixerVtail4 },         // MIXER_VTAIL4
     { 6, 0, mixerHex6H },          // MIXER_HEX6H
     { 0, 1, NULL },                // * MIXER_PPM_TO_SERVO
-    { 2, 1, mixerDualcopter  },    // MIXER_DUALCOPTER
+    { 2, 1, mixerDualcopter },     // MIXER_DUALCOPTER
     { 1, 1, NULL },                // MIXER_SINGLECOPTER
     { 4, 0, mixerAtail4 },         // MIXER_ATAIL4
     { 0, 0, NULL },                // MIXER_CUSTOM
@@ -403,6 +402,25 @@ void mixerResetMotors(void)
 }
 
 #ifdef USE_SERVOS
+
+STATIC_UNIT_TESTED void forwardAuxChannelsToServos(void)
+{
+    // offset servos based off number already used in mixer types
+    // airplane and servo_tilt together can't be used
+    int8_t firstServo = servoCount - AUX_FORWARD_CHANNEL_TO_SERVO_COUNT;
+
+    // start forwarding from this channel
+    uint8_t channelOffset = AUX1;
+
+    int8_t servoOffset;
+    for (servoOffset = 0; servoOffset < AUX_FORWARD_CHANNEL_TO_SERVO_COUNT; servoOffset++) {
+        if (firstServo + servoOffset < 0) {
+            continue; // there are not enough servos to forward all the AUX channels.
+        }
+        pwmWriteServo(firstServo + servoOffset, rcData[channelOffset++]);
+    }
+}
+
 static void updateGimbalServos(void)
 {
     pwmWriteServo(0, servo[0]);
@@ -546,12 +564,6 @@ static void airplaneMixer(void)
 void mixTable(void)
 {
     uint32_t i;
-    int8_t yawDirection3D = 1;
-
-	// Reverse yaw servo when inverted in 3D mode
-	if (feature(FEATURE_3D) && (rcData[THROTTLE] < rxConfig->midrc)) {
-		yawDirection3D = -1;
-	}
 
     if (motorCount > 3) {
         // prevent "yaw jump" during yaw correction
@@ -570,6 +582,13 @@ void mixTable(void)
     }
 
 #if !defined(USE_QUAD_MIXER_ONLY) || defined(USE_SERVOS)
+    int8_t yawDirection3D = 1;
+
+    // Reverse yaw servo when inverted in 3D mode
+    if (feature(FEATURE_3D) && (rcData[THROTTLE] < rxConfig->midrc)) {
+        yawDirection3D = -1;
+    }
+
     // airplane / servo mixes
     switch (currentMixerMode) {
         case MIXER_BI:
@@ -646,32 +665,25 @@ void mixTable(void)
     }
 
     // constrain servos
-    for (i = 0; i < MAX_SUPPORTED_SERVOS; i++)
-        servo[i] = constrain(servo[i], servoConf[i].min, servoConf[i].max); // limit the values
-
+    if (useServo) {
+        for (i = 0; i < MAX_SUPPORTED_SERVOS; i++) {
+            servo[i] = constrain(servo[i], servoConf[i].min, servoConf[i].max); // limit the values
+        }
+    }
     // forward AUX1-4 to servo outputs (not constrained)
     if (gimbalConfig->gimbal_flags & GIMBAL_FORWARDAUX) {
-        // offset servos based off number already used in mixer types
-        // airplane and servo_tilt together can't be used
-        int8_t firstServo = servoCount - AUX_FORWARD_CHANNEL_TO_SERVO_COUNT;
-
-        // start forwarding from this channel
-        uint8_t channelOffset = AUX1;
-
-        int8_t servoOffset;
-        for (servoOffset = 0; servoOffset < AUX_FORWARD_CHANNEL_TO_SERVO_COUNT; servoOffset++) {
-            if (firstServo + servoOffset < 0) {
-                continue; // there are not enough servos to forward all the AUX channels.
-            }
-            pwmWriteServo(firstServo + servoOffset, rcData[channelOffset++]);
-        }
+        forwardAuxChannelsToServos();
     }
 #endif
 
     if (ARMING_FLAG(ARMED)) {
 
+        // Find the maximum motor output.
         int16_t maxMotor = motor[0];
         for (i = 1; i < motorCount; i++) {
+            // If one motor is above the maxthrottle threshold, we reduce the value
+            // of all motors by the amount of overshoot.  That way, only one motor
+            // is at max and the relative power of each motor is preserved.
             if (motor[i] > maxMotor) {
                 maxMotor = motor[i];
             }
@@ -690,16 +702,18 @@ void mixTable(void)
                     motor[i] = constrain(motor[i], escAndServoConfig->mincommand, flight3DConfig->deadband3d_low);
                 }
             } else {
+                // If we're at minimum throttle and FEATURE_MOTOR_STOP enabled,
+                // do not spin the motors.
                 motor[i] = constrain(motor[i], escAndServoConfig->minthrottle, escAndServoConfig->maxthrottle);
                 if ((rcData[THROTTLE]) < rxConfig->mincheck) {
-                    if (!feature(FEATURE_MOTOR_STOP))
-                        motor[i] = escAndServoConfig->minthrottle;
-                    else
+                    if (feature(FEATURE_MOTOR_STOP)) {
                         motor[i] = escAndServoConfig->mincommand;
+                    } else if (mixerConfig->pid_at_min_throttle == 0) {
+                        motor[i] = escAndServoConfig->minthrottle;
+                    }
                 }
             }
         }
-
     } else {
         for (i = 0; i < motorCount; i++) {
             motor[i] = motor_disarmed[i];

@@ -36,7 +36,11 @@ fully charged and connect the output from it to S5_IN/PA0/RC5.
 S5_IN/PA0/RC5 is Pin 7 on the 8 pin connector, second to last pin, opposite end from the GND/+5/PPM signal input.
 
 Note: When battery monitoring is enabled on the CC3D RC5 can no-longer be used for PWM input.
- 
+
+### Sparky
+
+See Sparky board chapter.
+
 ## Configuration
 
 Enable the `VBAT` feature.
@@ -100,14 +104,14 @@ The virtual sensor uses the throttle position to calculate as estimated current 
 | Setting                       | Description                                              |
 | ----------------------------- | -------------------------------------------------------- | 
 | `current_meter_scale`      | The throttle scaling factor [centiamps, i.e. 1/100th A]  |
-| `current_meter_offset`     | The current at zero throttle (while armed) [centiamps, i.e. 1/100th A] |
+| `current_meter_offset`     | The current at zero throttle (while disarmed) [centiamps, i.e. 1/100th A] |
 
 There are two simple methods to tune the parameters depending in whether it is possible to measure current draw for your craft.
 
 #### Tuning Using Battery Charger Measurement
-It may be difficult to adjust `current_meter_offset` using this method unless you can measure the actual current draw with the craft armed at minimum throttle. Adjust `current_meter_scale` until the mAh draw reported by Cleanflight matches the charging data given by your battery charger after the flight (if the mAh draw is lower than reported by your battery charger, increase `current_meter_scale`, and vice-versa).
+It may be difficult to adjust `current_meter_offset` using this method unless you can measure the actual current draw with the craft disarmed. Adjust `current_meter_scale` until the mAh draw reported by Cleanflight matches the charging data given by your battery charger after the flight (if the mAh draw is lower than reported by your battery charger, increase `current_meter_scale`, and vice-versa).
 #### Tuning Using Actual Current Measurements
-If you know your crafts current draw at zero throttle while armed (Imin) and maximum throttle(Imax) you can calculate the scaling factors using the following formulas where Tmax is maximum throttle offset (i.e. for `max_throttle` = 1850, Tmax = 1850 - 1000 = 850):
+If you know your crafts current draw while disarmed (Imin), and at maximum throttle while armed (Imax), you can calculate the scaling factors using the following formulas where Tmax is maximum throttle offset (i.e. for `max_throttle` = 1850, Tmax = 1850 - 1000 = 850):
 ```
 current_meter_scale = (Imax - Imin) * 100000 / (Tmax + (Tmax * Tmax / 50))
 current_meter_offset = Imin * 100

@@ -100,6 +100,14 @@ typedef enum {
 #define MIN_MODE_RANGE_STEP 0
 #define MAX_MODE_RANGE_STEP ((CHANNEL_RANGE_MAX - CHANNEL_RANGE_MIN) / 25)
 
+// Roll/pitch rates are a proportion used for mixing, so it tops out at 1.0:
+#define CONTROL_RATE_CONFIG_ROLL_PITCH_RATE_MAX  100
+
+/* Meaningful yaw rates are effectively unbounded because they are treated as a rotation rate multiplier: */
+#define CONTROL_RATE_CONFIG_YAW_RATE_MAX         255
+
+#define CONTROL_RATE_CONFIG_TPA_MAX              100
+
 // steps are 25 apart
 // a value of 0 corresponds to a channel value of 900 or less
 // a value of 48 corresponds to a channel value of 2100 or more
@@ -122,8 +130,7 @@ typedef struct controlRateConfig_s {
     uint8_t rcExpo8;
     uint8_t thrMid8;
     uint8_t thrExpo8;
-    uint8_t rollPitchRate;
-    uint8_t yawRate;
+    uint8_t rates[3];
     uint8_t dynThrPID;
     uint16_t tpa_breakpoint;                // Breakpoint where TPA is activated
 } controlRateConfig_t;
@@ -136,6 +143,8 @@ typedef struct rcControlsConfig_s {
     uint8_t alt_hold_deadband;              // defines the neutral zone of throttle stick during altitude hold, default setting is +/-40
     uint8_t alt_hold_fast_change;           // when disabled, turn off the althold when throttle stick is out of deadband defined with alt_hold_deadband; when enabled, altitude changes slowly proportional to stick movement
 } rcControlsConfig_t;
+
+bool areUsingSticksToArm(void);
 
 bool areSticksInApModePosition(uint16_t ap_mode);
 throttleStatus_e calculateThrottleStatus(rxConfig_t *rxConfig, uint16_t deadband3d_throttle);
@@ -157,10 +166,12 @@ typedef enum {
     ADJUSTMENT_YAW_P,
     ADJUSTMENT_YAW_I,
     ADJUSTMENT_YAW_D,
-    ADJUSTMENT_RATE_PROFILE
+    ADJUSTMENT_RATE_PROFILE,
+    ADJUSTMENT_PITCH_RATE,
+    ADJUSTMENT_ROLL_RATE,
 } adjustmentFunction_e;
 
-#define ADJUSTMENT_FUNCTION_COUNT 13
+#define ADJUSTMENT_FUNCTION_COUNT 15
 
 typedef enum {
     ADJUSTMENT_MODE_STEP,

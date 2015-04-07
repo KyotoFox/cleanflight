@@ -20,6 +20,8 @@
 
 #include <limits.h>
 
+//#define DEBUG_ALTITUDE_HOLD
+
 #define BARO
 
 extern "C" {
@@ -69,17 +71,17 @@ TEST(AltitudeHoldTest, IsThrustFacingDownwards)
     // given
 
     inclinationExpectation_t inclinationExpectations[] = {
-            { { 0, 0 }, DOWNWARDS_THRUST },
-            { { 799, 799 }, DOWNWARDS_THRUST },
-            { { 800, 799 }, UPWARDS_THRUST },
-            { { 799, 800 }, UPWARDS_THRUST },
-            { { 800, 800 }, UPWARDS_THRUST },
-            { { 801, 801 }, UPWARDS_THRUST },
-            { { -799, -799 }, DOWNWARDS_THRUST },
-            { { -800, -799 }, UPWARDS_THRUST },
-            { { -799, -800 }, UPWARDS_THRUST },
-            { { -800, -800 }, UPWARDS_THRUST },
-            { { -801, -801 }, UPWARDS_THRUST }
+            { {{    0,    0 }}, DOWNWARDS_THRUST },
+            { {{  799,  799 }}, DOWNWARDS_THRUST },
+            { {{  800,  799 }}, UPWARDS_THRUST },
+            { {{  799,  800 }}, UPWARDS_THRUST },
+            { {{  800,  800 }}, UPWARDS_THRUST },
+            { {{  801,  801 }}, UPWARDS_THRUST },
+            { {{ -799, -799 }}, DOWNWARDS_THRUST },
+            { {{ -800, -799 }}, UPWARDS_THRUST },
+            { {{ -799, -800 }}, UPWARDS_THRUST },
+            { {{ -800, -800 }}, UPWARDS_THRUST },
+            { {{ -801, -801 }}, UPWARDS_THRUST }
     };
     uint8_t testIterationCount = sizeof(inclinationExpectations) / sizeof(inclinationExpectation_t);
 
@@ -87,7 +89,9 @@ TEST(AltitudeHoldTest, IsThrustFacingDownwards)
 
     for (uint8_t index = 0; index < testIterationCount; index ++) {
         inclinationExpectation_t *angleInclinationExpectation = &inclinationExpectations[index];
+#ifdef DEBUG_ALTITUDE_HOLD
         printf("iteration: %d\n", index);
+#endif
         bool result = isThrustFacingDownwards(&angleInclinationExpectation->inclination);
         EXPECT_EQ(angleInclinationExpectation->expectDownwardsThrust, result);
     }
@@ -101,18 +105,18 @@ typedef struct inclinationAngleExpectations_s {
 TEST(AltitudeHoldTest, TestCalculateTiltAngle)
 {
     inclinationAngleExpectations_t inclinationAngleExpectations[] = {
-        { {0, 0}, 0},
-        { {1, 0}, 1},
-        { {0, 1}, 1},
-        { {0, -1}, 1},
-        { {-1, 0}, 1},
-        { {-1, -2}, 2},
-        { {-2, -1}, 2},
-        { {1, 2}, 2},
-        { {2, 1}, 2}
+        { {{ 0,  0}}, 0},
+        { {{ 1,  0}}, 1},
+        { {{ 0,  1}}, 1},
+        { {{ 0, -1}}, 1},
+        { {{-1,  0}}, 1},
+        { {{-1, -2}}, 2},
+        { {{-2, -1}}, 2},
+        { {{ 1,  2}}, 2},
+        { {{ 2,  1}}, 2}
     };
 
-    rollAndPitchInclination_t inclination = {0, 0};
+    rollAndPitchInclination_t inclination = {{0, 0}};
     uint16_t tilt_angle = calculateTiltAngle(&inclination);
     EXPECT_EQ(tilt_angle, 0);
 
