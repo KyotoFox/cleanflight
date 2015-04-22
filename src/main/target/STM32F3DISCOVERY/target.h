@@ -39,12 +39,13 @@
 #define BEEPER_INVERTED
 
 #define USE_SPI
-//#define USE_SPI_DEVICE_1
+#define USE_SPI_DEVICE_1
 #define USE_SPI_DEVICE_2
 
 
 #define GYRO
 #define USE_GYRO_SPI_MPU6000
+//#define USE_FAKE_GYRO
 
 #define MPU6000_CS_GPIO       GPIOB
 #define MPU6000_CS_PIN        GPIO_Pin_12
@@ -70,6 +71,28 @@
 #define BEEPER
 #define LED0
 #define LED1
+
+#define USE_FLASHFS
+#define USE_FLASH_M25P16
+
+#define M25P16_CS_GPIO          GPIOA
+#define M25P16_CS_PIN           GPIO_Pin_13
+#define M25P16_SPI_INSTANCE     SPI1
+
+#define SPI1_GPIO               GPIOB
+#define SPI1_GPIO_PERIPHERAL    RCC_AHBPeriph_GPIOB
+
+#define SPI1_SCK_PIN            GPIO_Pin_3
+#define SPI1_SCK_PIN_SOURCE     GPIO_PinSource3
+#define SPI1_SCK_CLK            RCC_AHBPeriph_GPIOB
+
+#define SPI1_MISO_PIN           GPIO_Pin_4
+#define SPI1_MISO_PIN_SOURCE    GPIO_PinSource4
+#define SPI1_MISO_CLK           RCC_AHBPeriph_GPIOB
+
+#define SPI1_MOSI_PIN           GPIO_Pin_5
+#define SPI1_MOSI_PIN_SOURCE    GPIO_PinSource5
+#define SPI1_MOSI_CLK           RCC_AHBPeriph_GPIOB
 
 #define USE_VCP
 #define USE_USART1

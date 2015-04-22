@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include "platform.h"
+#include "gpio.h"
 
 #include "drivers/flash_m25p16.h"
 #include "drivers/bus_spi.h"
@@ -189,6 +190,16 @@ bool m25p16_init()
 {
     //Maximum speed for standard READ command is 20mHz, other commands tolerate 25mHz
     spiSetDivisor(M25P16_SPI_INSTANCE, SPI_18MHZ_CLOCK_DIVIDER);
+    
+    // Init CS pin
+    GPIO_InitTypeDef GPIO_InitStructure;
+    GPIO_InitStructure.GPIO_Pin = M25P16_CS_PIN;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+    GPIO_Init(M25P16_CS_GPIO, &GPIO_InitStructure);
+    
 
     return m25p16_readIdentification();
 }
