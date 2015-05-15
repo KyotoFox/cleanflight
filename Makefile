@@ -496,6 +496,7 @@ STM32F3DISCOVERY_SRC	 = \
 		   drivers/accgyro_l3g4200d.c \
 		   drivers/barometer_ms5611.c \
 		   drivers/compass_ak8975.c \
+		   drivers/display_ug2864hsweg01.h \
 		   drivers/flash_m25p16.c \
 		   io/flashfs.c \
 		   $(HIGHEND_SRC) \
