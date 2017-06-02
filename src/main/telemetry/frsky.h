@@ -15,14 +15,17 @@
  * along with Cleanflight.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TELEMETRY_FRSKY_H_
-#define TELEMETRY_FRSKY_H_
+#pragma once
+
+typedef enum {
+    FRSKY_VFAS_PRECISION_LOW = 0,
+    FRSKY_VFAS_PRECISION_HIGH
+} frskyVFasPrecision_e;
 
 void handleFrSkyTelemetry(void);
 void checkFrSkyTelemetryState(void);
 
-void initFrSkyTelemetry(telemetryConfig_t *telemetryConfig);
+void initFrSkyTelemetry(void);
 void configureFrSkyTelemetryPort(void);
 void freeFrSkyTelemetryPort(void);
 
-#endif /* TELEMETRY_FRSKY_H_ */

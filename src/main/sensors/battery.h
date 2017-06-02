@@ -17,53 +17,62 @@
 
 #pragma once
 
-#define VBAT_SCALE_DEFAULT 110
-#define VBAT_SCALE_MIN 0
-#define VBAT_SCALE_MAX 255
+#include "config/parameter_group.h"
 
-typedef enum {
-    CURRENT_SENSOR_NONE = 0,
-    CURRENT_SENSOR_ADC,
-    CURRENT_SENSOR_VIRTUAL,
-    CURRENT_SENSOR_MAX = CURRENT_SENSOR_VIRTUAL
-} currentSensor_e;
+#include "common/filter.h"
+#include "common/time.h"
+#include "sensors/current.h"
+#include "sensors/voltage.h"
 
 typedef struct batteryConfig_s {
-    uint8_t vbatscale;                      // adjust this to match battery voltage to reported value
+    // voltage
     uint8_t vbatmaxcellvoltage;             // maximum voltage per cell, used for auto-detecting battery voltage in 0.1V units, default is 43 (4.3V)
     uint8_t vbatmincellvoltage;             // minimum voltage per cell, this triggers battery critical alarm, in 0.1V units, default is 33 (3.3V)
     uint8_t vbatwarningcellvoltage;         // warning voltage per cell, this triggers battery warning alarm, in 0.1V units, default is 35 (3.5V)
+    uint8_t batteryNotPresentLevel;         // Below this level battery is considered as not present
 
-    int16_t currentMeterScale;             // scale the current sensor output voltage to milliamps. Value in 1/10th mV/A
-    uint16_t currentMeterOffset;            // offset of the current sensor in millivolt steps
-    currentSensor_e  currentMeterType;      // type of current meter used, either ADC or virtual
+    voltageMeterSource_e voltageMeterSource; // source of battery voltage meter used, either ADC or ESC
 
-    // FIXME this doesn't belong in here since it's a concern of MSP, not of the battery code.
-    uint8_t multiwiiCurrentMeterOutput;     // if set to 1 output the amperage in milliamp steps instead of 0.01A steps via msp
+    // current
+    currentMeterSource_e currentMeterSource; // source of battery current meter used, either ADC, Virtual or ESC
     uint16_t batteryCapacity;               // mAh
+
+    // warnings / alerts
+    bool useVBatAlerts;                     // Issue alerts based on VBat readings
+    bool useConsumptionAlerts;              // Issue alerts based on total power consumption
+    uint8_t consumptionWarningPercentage;   // Percentage of remaining capacity that should trigger a battery warning
+    uint8_t vbathysteresis;                 // hysteresis for alarm, default 1 = 0.1V
 } batteryConfig_t;
+
+PG_DECLARE(batteryConfig_t, batteryConfig);
 
 typedef enum {
     BATTERY_OK = 0,
     BATTERY_WARNING,
-    BATTERY_CRITICAL
+    BATTERY_CRITICAL,
+    BATTERY_NOT_PRESENT
 } batteryState_e;
 
-extern uint8_t vbat;
-extern uint16_t vbatLatestADC;
-extern uint8_t batteryCellCount;
-extern uint16_t batteryWarningVoltage;
-extern uint16_t amperageLatestADC;
-extern int32_t amperage;
-extern int32_t mAhDrawn;
+void batteryInit(void);
+void batteryUpdateVoltage(timeUs_t currentTimeUs);
+void batteryUpdatePresence(void);
 
-uint16_t batteryAdcToVoltage(uint16_t src);
-batteryState_e calculateBatteryState(void);
-void updateBatteryVoltage(void);
-void batteryInit(batteryConfig_t *initialBatteryConfig);
+batteryState_e getBatteryState(void);
+const  char * getBatteryStateString(void);
 
-void updateCurrentMeter(int32_t lastUpdateAt);
-int32_t currentMeterToCentiamps(uint16_t src);
+void batteryUpdateStates(void);
+void batteryUpdateAlarms(void);
 
-uint8_t calculateBatteryPercentage(void);
-uint8_t calculateBatteryCapacityRemainingPercentage(void);
+struct rxConfig_s;
+
+float calculateVbatPidCompensation(void);
+uint8_t calculateBatteryPercentageRemaining(void);
+uint16_t getBatteryVoltage(void);
+uint16_t getBatteryVoltageLatest(void);
+uint8_t getBatteryCellCount(void);
+
+int32_t getAmperage(void);
+int32_t getAmperageLatest(void);
+int32_t getMAhDrawn(void);
+
+void batteryUpdateCurrentMeter(timeUs_t currentTimeUs);

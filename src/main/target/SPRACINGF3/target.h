@@ -17,131 +17,193 @@
 
 #pragma once
 
+#if defined(RMDO)
+#define TARGET_BOARD_IDENTIFIER "RMDO"
+#elif defined(ZCOREF3)
+#define TARGET_BOARD_IDENTIFIER "ZCF3"
+#elif defined(FLIP32F3OSD)
+#define TARGET_BOARD_IDENTIFIER "FLF3"
+#else
 #define TARGET_BOARD_IDENTIFIER "SRF3"
+#endif
 
-#define LED0_GPIO   GPIOB
-#define LED0_PIN    Pin_3
-#define LED0_PERIPHERAL RCC_AHBPeriph_GPIOB
+#if defined(ZCOREF3)
+#define CONFIG_FASTLOOP_PREFERRED_ACC ACC_DEFAULT
 
-#define BEEP_GPIO   GPIOC
-#define BEEP_PIN    Pin_15
-#define BEEP_PERIPHERAL RCC_AHBPeriph_GPIOC
+#define LED0                    PB8
+#else
+#define CONFIG_FASTLOOP_PREFERRED_ACC ACC_NONE
+
+#define LED0                    PB3
+#endif
+
+#if defined(ZCOREF3)
+#define EXTI15_10_CALLBACK_HANDLER_COUNT 1
+#elif defined(FLIP32F3OSD)
+#define EXTI_CALLBACK_HANDLER_COUNT 2 // MPU data ready and MAG data ready
+#endif
+
+#define BEEPER                  PC15
 #define BEEPER_INVERTED
 
-#define USABLE_TIMER_CHANNEL_COUNT 17
+#define USE_EXTI
+#define MPU_INT_EXTI            PC13
+#define USE_MPU_DATA_READY_SIGNAL
+#define ENSURE_MPU_DATA_READY_IS_LOW
 
 #define GYRO
-#define USE_GYRO_MPU6050
-#define GYRO_MPU6050_ALIGN CW270_DEG
 
 #define ACC
-#define USE_ACC_MPU6050
-#define ACC_MPU6050_ALIGN CW270_DEG
 
 #define BARO
+#define USE_BARO_BMP280
+
+#if defined(FLIP32F3OSD)
+#define USE_GYRO_MPU6500
+#define GYRO_MPU6500_ALIGN CW270_DEG
+
+#define USE_ACC_MPU6500
+#define ACC_MPU6500_ALIGN CW270_DEG
+
+#elif defined(ZCOREF3)
+#define GYRO
+#define USE_GYRO_MPU6500
+#define USE_GYRO_SPI_MPU6500
+#define GYRO_MPU6500_ALIGN      CW180_DEG
+
+#define ACC
+#define USE_ACC_MPU6500
+#define USE_ACC_SPI_MPU6500
+#define ACC_MPU6500_ALIGN       CW180_DEG
+
+#define USE_SPI_DEVICE_1 // PB9,3,4,5 on AF5 SPI1 (MPU)
+
+#define SPI1_NSS_PIN            PB9
+#define SPI1_SCK_PIN            PB3
+#define SPI1_MISO_PIN           PB4
+#define SPI1_MOSI_PIN           PB5
+
+#define MPU6500_CS_PIN          PB9
+#define MPU6500_SPI_INSTANCE    SPI1
+
+#else
+#define USE_GYRO_MPU6050
+#define GYRO_MPU6050_ALIGN      CW270_DEG
+
+#define USE_ACC_MPU6050
+#define ACC_MPU6050_ALIGN       CW270_DEG
+#endif
+
+#if defined(SPRACINGF3) || defined(FLIP32F3OSD)
+#define SONAR
+#define SONAR_TRIGGER_PIN       PB0
+#define SONAR_ECHO_PIN          PB1
+
+#elif defined(RMDO)
+#undef USE_GPS
+
+#elif defined(ZCOREF3)
+#define USE_MAG_DATA_READY_SIGNAL
+#define ENSURE_MAG_DATA_READY_IS_HIGH
+
+#else //SPRACINGF3
+
+#define SONAR
+#define SONAR_TRIGGER_PIN       PB0
+#define SONAR_ECHO_PIN          PB1
+
 #define USE_BARO_MS5611
+#define USE_BARO_BMP085
 
 #define MAG
+#define USE_MAG_AK8975
 #define USE_MAG_HMC5883
-#define MAG_HMC5883_ALIGN CW270_DEG
+#define MAG_HMC5883_ALIGN       CW270_DEG
+
+#define USE_MAG_DATA_READY_SIGNAL
+#define ENSURE_MAG_DATA_READY_IS_HIGH
+#define MAG_INT_EXTI            PC14
+#endif
 
 #define USE_FLASHFS
 #define USE_FLASH_M25P16
 
-#define BEEPER
-#define LED0
+#define USE_UART1
+#define USE_UART2
+#define USE_UART3
+#define USE_SOFTSERIAL1
+#define USE_SOFTSERIAL2
 
-#define USE_USART1
-#define USE_USART2
-#define USE_USART3
-#define SERIAL_PORT_COUNT 3
+#define SERIAL_PORT_COUNT       5
 
-#ifndef UART1_GPIO
-#define UART1_TX_PIN        GPIO_Pin_9  // PA9
-#define UART1_RX_PIN        GPIO_Pin_10 // PA10
-#define UART1_GPIO          GPIOA
-#define UART1_GPIO_AF       GPIO_AF_7
-#define UART1_TX_PINSOURCE  GPIO_PinSource9
-#define UART1_RX_PINSOURCE  GPIO_PinSource10
+#if !defined(ZCOREF3)
+#define SOFTSERIAL1_RX_PIN      PB4 // PWM 5
+#define SOFTSERIAL1_TX_PIN      PB5 // PWM 6
+
+#define SOFTSERIAL2_RX_PIN      PB0 // PWM 7
+#define SOFTSERIAL2_TX_PIN      PB1 // PWM 8
+
+#define SONAR_SOFTSERIAL2_EXCLUSIVE
 #endif
 
-#define UART2_TX_PIN        GPIO_Pin_14 // PA14 / SWCLK
-#define UART2_RX_PIN        GPIO_Pin_15 // PA15
-#define UART2_GPIO          GPIOA
-#define UART2_GPIO_AF       GPIO_AF_7
-#define UART2_TX_PINSOURCE  GPIO_PinSource14
-#define UART2_RX_PINSOURCE  GPIO_PinSource15
+#define USE_ESCSERIAL
+#define ESCSERIAL_TIMER_TX_HARDWARE 0 // PWM 1
 
-#ifndef UART3_GPIO
-#define UART3_TX_PIN        GPIO_Pin_10 // PB10 (AF7)
-#define UART3_RX_PIN        GPIO_Pin_11 // PB11 (AF7)
-#define UART3_GPIO_AF       GPIO_AF_7
-#define UART3_GPIO          GPIOB
-#define UART3_TX_PINSOURCE  GPIO_PinSource10
-#define UART3_RX_PINSOURCE  GPIO_PinSource11
-#endif
+#define UART1_TX_PIN            PA9
+#define UART1_RX_PIN            PA10
+
+#define UART2_TX_PIN            PA14 // PA14 / SWCLK
+#define UART2_RX_PIN            PA15
+
+#define UART3_TX_PIN            PB10 // PB10 (AF7)
+#define UART3_RX_PIN            PB11 // PB11 (AF7)
 
 #define USE_I2C
-#define I2C_DEVICE (I2CDEV_1) // PB6/SCL, PB7/SDA
+#define USE_I2C_DEVICE_1
+#define I2C_DEVICE              (I2CDEV_1)
 
 #define USE_SPI
 #define USE_SPI_DEVICE_2 // PB12,13,14,15 on AF5
 
-#define SPI2_GPIO               GPIOB
-#define SPI2_GPIO_PERIPHERAL    RCC_AHBPeriph_GPIOB
-#define SPI2_NSS_PIN            Pin_12
-#define SPI2_NSS_PIN_SOURCE     GPIO_PinSource12
-#define SPI2_SCK_PIN            Pin_13
-#define SPI2_SCK_PIN_SOURCE     GPIO_PinSource13
-#define SPI2_MISO_PIN           Pin_14
-#define SPI2_MISO_PIN_SOURCE    GPIO_PinSource14
-#define SPI2_MOSI_PIN           Pin_15
-#define SPI2_MOSI_PIN_SOURCE    GPIO_PinSource15
-
-#define M25P16_CS_GPIO          GPIOB
-#define M25P16_CS_PIN           GPIO_Pin_12
+#define M25P16_CS_PIN           PB12
 #define M25P16_SPI_INSTANCE     SPI2
 
+#define BOARD_HAS_VOLTAGE_DIVIDER
+#define BOARD_HAS_CURRENT_SENSOR
 #define USE_ADC
+#define ADC_INSTANCE            ADC2
+#define VBAT_ADC_PIN            PA4
+#define CURRENT_METER_ADC_PIN   PA5
+#define RSSI_ADC_PIN            PB2
 
-#define ADC_INSTANCE                ADC2
-#define ADC_DMA_CHANNEL             DMA2_Channel1
-#define ADC_AHB_PERIPHERAL          RCC_AHBPeriph_DMA2
+#define OSD
+#define USE_OSD_OVER_MSP_DISPLAYPORT
+#define USE_SLOW_MSP_DISPLAYPORT_RATE_WHEN_UNARMED
 
-#define VBAT_ADC_GPIO               GPIOA
-#define VBAT_ADC_GPIO_PIN           GPIO_Pin_4
-#define VBAT_ADC_CHANNEL            ADC_Channel_1
+#define USE_MSP_CURRENT_METER
 
-#define CURRENT_METER_ADC_GPIO      GPIOA
-#define CURRENT_METER_ADC_GPIO_PIN  GPIO_Pin_5
-#define CURRENT_METER_ADC_CHANNEL   ADC_Channel_2
+#define USE_ESC_SENSOR
+#define REMAP_TIM17_DMA
 
-#define RSSI_ADC_GPIO               GPIOB
-#define RSSI_ADC_GPIO_PIN           GPIO_Pin_2
-#define RSSI_ADC_CHANNEL            ADC_Channel_12
+// UART1 TX uses DMA1_Channel4, which is also used by dshot on motor 4
+#if defined(USE_UART1_TX_DMA) && defined(USE_DSHOT)
+#undef USE_UART1_TX_DMA
+#endif
 
-#define RSSI_ADC_GPIO               GPIOB
-#define RSSI_ADC_GPIO_PIN           GPIO_Pin_2
-#define RSSI_ADC_CHANNEL            ADC_Channel_12
+#define ENABLE_BLACKBOX_LOGGING_ON_SPIFLASH_BY_DEFAULT
 
-#define LED_STRIP
-#define LED_STRIP_TIMER TIM1
+#define DEFAULT_RX_FEATURE      FEATURE_RX_PPM
+#define DEFAULT_FEATURES        (FEATURE_TRANSPONDER  | FEATURE_RSSI_ADC | FEATURE_TELEMETRY)
 
-#define USE_LED_STRIP_ON_DMA1_CHANNEL2
-#define WS2811_GPIO                     GPIOA
-#define WS2811_GPIO_AHB_PERIPHERAL      RCC_AHBPeriph_GPIOA
-#define WS2811_GPIO_AF                  GPIO_AF_6
-#define WS2811_PIN                      GPIO_Pin_8
-#define WS2811_PIN_SOURCE               GPIO_PinSource8
-#define WS2811_TIMER                    TIM1
-#define WS2811_TIMER_APB2_PERIPHERAL    RCC_APB2Periph_TIM1
-#define WS2811_DMA_CHANNEL              DMA1_Channel2
-#define WS2811_IRQ                      DMA1_Channel2_IRQn
+#define SPEKTRUM_BIND_PIN       UART3_RX_PIN
 
-#define GPS
-#define BLACKBOX
-#define TELEMETRY
-#define SERIAL_RX
-#define AUTOTUNE
-#define DISPLAY
-#define USE_SERVOS
+#define USE_SERIAL_4WAY_BLHELI_INTERFACE
+
+// IO - stm32f303cc in 48pin package
+#define TARGET_IO_PORTA         0xffff
+#define TARGET_IO_PORTB         0xffff
+#define TARGET_IO_PORTC         (BIT(13)|BIT(14)|BIT(15))
+#define TARGET_IO_PORTF         (BIT(0)|BIT(1)|BIT(3)|BIT(4))
+
+#define USABLE_TIMER_CHANNEL_COUNT 17
+#define USED_TIMERS             ( TIM_N(1) | TIM_N(2) | TIM_N(3) | TIM_N(4) | TIM_N(15) | TIM_N(16) | TIM_N(17) )

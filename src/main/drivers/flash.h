@@ -18,14 +18,19 @@
 #pragma once
 
 #include <stdint.h>
+#include "drivers/io_types.h"
 
-typedef struct flashGeometry_t {
-    uint8_t sectors;
+typedef struct flashGeometry_s {
+    uint16_t sectors; // Count of the number of erasable blocks on the device
 
     uint16_t pagesPerSector;
-    uint16_t pageSize;
+    const uint16_t pageSize; // In bytes
 
-    uint32_t sectorSize;
+    uint32_t sectorSize; // This is just pagesPerSector * pageSize
 
-    uint32_t totalSize;
+    uint32_t totalSize;  // This is just sectorSize * sectors
 } flashGeometry_t;
+
+typedef struct flashConfig_s {
+    ioTag_t csTag;
+} flashConfig_t;

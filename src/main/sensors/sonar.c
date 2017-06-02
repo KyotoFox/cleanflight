@@ -17,87 +17,127 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <math.h>
 
 #include "platform.h"
 
-#include "common/maths.h"
-#include "common/axis.h"
+#ifdef SONAR
 
-#include "drivers/sonar_hcsr04.h"
-#include "drivers/gpio.h"
-#include "config/runtime_config.h"
-#include "config/config.h"
+#include "build/build_config.h"
+
+#include "common/maths.h"
+#include "common/utils.h"
+
+#include "config/feature.h"
+#include "config/parameter_group.h"
+#include "config/parameter_group_ids.h"
+
+#include "drivers/io.h"
+
+#include "fc/runtime_config.h"
 
 #include "sensors/sensors.h"
+#include "sensors/battery.h"
 #include "sensors/sonar.h"
 
-// in cm , -1 indicate sonar is not in range - inclination adjusted by imu
+// Sonar measurements are in cm, a value of SONAR_OUT_OF_RANGE indicates sonar is not in range.
+// Inclination is adjusted by imu
 
-#ifdef SONAR
+int16_t sonarMaxRangeCm;
+int16_t sonarMaxAltWithTiltCm;
+int16_t sonarCfAltCm; // Complimentary Filter altitude
+STATIC_UNIT_TESTED int16_t sonarMaxTiltDeciDegrees;
+float sonarMaxTiltCos;
 
 static int32_t calculatedAltitude;
 
-void sonarInit(void)
+PG_REGISTER_WITH_RESET_TEMPLATE(sonarConfig_t, sonarConfig, PG_SONAR_CONFIG, 0);
+
+PG_RESET_TEMPLATE(sonarConfig_t, sonarConfig,
+    .triggerTag = IO_TAG(SONAR_TRIGGER_PIN),
+    .echoTag = IO_TAG(SONAR_ECHO_PIN)
+);
+
+void sonarInit(const sonarConfig_t *sonarConfig)
 {
-#if defined(NAZE) || defined(EUSTM32F103RC) || defined(PORT103R)
-    static const sonarHardware_t const sonarPWM56 = {
-        .trigger_pin = Pin_8,   // PWM5 (PB8) - 5v tolerant
-        .echo_pin = Pin_9,      // PWM6 (PB9) - 5v tolerant
-        .exti_line = EXTI_Line9,
-        .exti_pin_source = GPIO_PinSource9,
-        .exti_irqn = EXTI9_5_IRQn
-    };
-    static const sonarHardware_t const sonarRC78 = {
-        .trigger_pin = Pin_0,   // RX7 (PB0) - only 3.3v ( add a 1K Ohms resistor )
-        .echo_pin = Pin_1,      // RX8 (PB1) - only 3.3v ( add a 1K Ohms resistor )
-        .exti_line = EXTI_Line1,
-        .exti_pin_source = GPIO_PinSource1,
-        .exti_irqn = EXTI1_IRQn
-    };
-    // If we are using parallel PWM for our receiver, then use motor pins 5 and 6 for sonar, otherwise use rc pins 7 and 8
-    if (feature(FEATURE_RX_PARALLEL_PWM)) {
-        hcsr04_init(&sonarPWM56);
-    } else {
-        hcsr04_init(&sonarRC78);
-    }
-#elif defined(OLIMEXINO)
-    static const sonarHardware_t const sonarHardware = {
-        .trigger_pin = Pin_0,   // RX7 (PB0) - only 3.3v ( add a 1K Ohms resistor )
-        .echo_pin = Pin_1,      // RX8 (PB1) - only 3.3v ( add a 1K Ohms resistor )
-        .exti_line = EXTI_Line1,
-        .exti_pin_source = GPIO_PinSource1,
-        .exti_irqn = EXTI1_IRQn
-    };
-    hcsr04_init(&sonarHardware);
-#else
-#error Sonar not defined for target
-#endif
+    sonarRange_t sonarRange;
+
+    hcsr04_init(sonarConfig, &sonarRange);
 
     sensorsSet(SENSOR_SONAR);
-    calculatedAltitude = -1;
+    sonarMaxRangeCm = sonarRange.maxRangeCm;
+    sonarCfAltCm = sonarMaxRangeCm / 2;
+    sonarMaxTiltDeciDegrees =  sonarRange.detectionConeExtendedDeciDegrees / 2;
+    sonarMaxTiltCos = cos_approx(sonarMaxTiltDeciDegrees / 10.0f * RAD);
+    sonarMaxAltWithTiltCm = sonarMaxRangeCm * sonarMaxTiltCos;
+    calculatedAltitude = SONAR_OUT_OF_RANGE;
 }
 
-void sonarUpdate(void)
+#define DISTANCE_SAMPLES_MEDIAN 5
+
+static int32_t applySonarMedianFilter(int32_t newSonarReading)
 {
+    static int32_t sonarFilterSamples[DISTANCE_SAMPLES_MEDIAN];
+    static int currentFilterSampleIndex = 0;
+    static bool medianFilterReady = false;
+    int nextSampleIndex;
+
+    if (newSonarReading > SONAR_OUT_OF_RANGE) // only accept samples that are in range
+    {
+        nextSampleIndex = (currentFilterSampleIndex + 1);
+        if (nextSampleIndex == DISTANCE_SAMPLES_MEDIAN) {
+            nextSampleIndex = 0;
+            medianFilterReady = true;
+        }
+
+        sonarFilterSamples[currentFilterSampleIndex] = newSonarReading;
+        currentFilterSampleIndex = nextSampleIndex;
+    }
+    if (medianFilterReady)
+        return quickMedianFilter5(sonarFilterSamples);
+    else
+        return newSonarReading;
+}
+
+void sonarUpdate(timeUs_t currentTimeUs)
+{
+    UNUSED(currentTimeUs);
     hcsr04_start_reading();
 }
 
+/**
+ * Get the last distance measured by the sonar in centimeters. When the ground is too far away, SONAR_OUT_OF_RANGE is returned.
+ */
 int32_t sonarRead(void)
 {
-    return hcsr04_get_distance();
+    int32_t distance = hcsr04_get_distance();
+    if (distance > HCSR04_MAX_RANGE_CM)
+        distance = SONAR_OUT_OF_RANGE;
+
+    return applySonarMedianFilter(distance);
 }
 
-int32_t sonarCalculateAltitude(int32_t sonarAlt, int16_t tiltAngle)
+/**
+ * Apply tilt correction to the given raw sonar reading in order to compensate for the tilt of the craft when estimating
+ * the altitude. Returns the computed altitude in centimeters.
+ *
+ * When the ground is too far away or the tilt is too large, SONAR_OUT_OF_RANGE is returned.
+ */
+int32_t sonarCalculateAltitude(int32_t sonarDistance, float cosTiltAngle)
 {
-    // calculate sonar altitude only if the sonar is facing downwards(<25deg)
-    if (tiltAngle > 250)
-        calculatedAltitude = -1;
+    // calculate sonar altitude only if the ground is in the sonar cone
+    if (cosTiltAngle <= sonarMaxTiltCos)
+        calculatedAltitude = SONAR_OUT_OF_RANGE;
     else
-        calculatedAltitude = sonarAlt * (900.0f - tiltAngle) / 900.0f;
-
+        // altitude = distance * cos(tiltAngle), use approximation
+        calculatedAltitude = sonarDistance * cosTiltAngle;
     return calculatedAltitude;
 }
 
+/**
+ * Get the latest altitude that was computed by a call to sonarCalculateAltitude(), or SONAR_OUT_OF_RANGE if sonarCalculateAltitude
+ * has never been called.
+ */
 int32_t sonarGetLatestAltitude(void)
 {
     return calculatedAltitude;

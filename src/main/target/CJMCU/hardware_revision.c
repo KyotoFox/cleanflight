@@ -21,21 +21,11 @@
 
 #include "platform.h"
 
-#include "build_config.h"
+#include "build/build_config.h"
 
-#include "drivers/system.h"
-#include "drivers/bus_spi.h"
-#include "drivers/sensor.h"
-#include "drivers/accgyro.h"
-#include "drivers/accgyro_spi_mpu6500.h"
+#include "drivers/io_types.h"
 
 #include "hardware_revision.h"
-
-static const char * const hardwareRevisionNames[] = {
-        "Unknown",
-        "R1",
-        "R2"
-};
 
 uint8_t hardwareRevision = UNKNOWN;
 
@@ -50,4 +40,9 @@ void detectHardwareRevision(void)
 
 void updateHardwareRevision(void)
 {
+}
+
+ioTag_t selectMPUIntExtiConfigByHardwareRevision(void)
+{
+    return IO_TAG_NONE;
 }

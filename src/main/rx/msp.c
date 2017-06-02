@@ -20,45 +20,57 @@
 
 #include "platform.h"
 
-#include "build_config.h"
+#ifdef USE_RX_MSP
 
-#include "drivers/system.h"
-
-#include "drivers/serial.h"
-#include "drivers/serial_uart.h"
-#include "io/serial.h"
+#include "common/utils.h"
 
 #include "rx/rx.h"
 #include "rx/msp.h"
 
+static uint16_t mspFrame[MAX_SUPPORTED_RC_CHANNEL_COUNT];
 static bool rxMspFrameDone = false;
 
-static uint16_t rxMspReadRawRC(rxRuntimeConfig_t *rxRuntimeConfigPtr, uint8_t chan)
+static uint16_t rxMspReadRawRC(const rxRuntimeConfig_t *rxRuntimeConfigPtr, uint8_t chan)
 {
     UNUSED(rxRuntimeConfigPtr);
-    return rcData[chan];
+    return mspFrame[chan];
 }
 
-void rxMspFrameRecieve(void)
+/*
+ * Called from MSP command handler - mspFcProcessCommand
+ */
+void rxMspFrameReceive(uint16_t *frame, int channelCount)
 {
+    for (int i = 0; i < channelCount; i++) {
+        mspFrame[i] = frame[i];
+    }
+
+    // Any channels not provided will be reset to zero
+    for (int i = channelCount; i < MAX_SUPPORTED_RC_CHANNEL_COUNT; i++) {
+        mspFrame[i] = 0;
+    }
+
     rxMspFrameDone = true;
 }
 
-bool rxMspFrameComplete(void)
+static uint8_t rxMspFrameStatus(void)
 {
-    if (rxMspFrameDone) {
-        rxMspFrameDone = false;
-        return true;
+    if (!rxMspFrameDone) {
+        return RX_FRAME_PENDING;
     }
-    return false;
+
+    rxMspFrameDone = false;
+    return RX_FRAME_COMPLETE;
 }
 
-bool rxMspInit(rxConfig_t *rxConfig, rxRuntimeConfig_t *rxRuntimeConfig, rcReadRawDataPtr *callback)
+void rxMspInit(const rxConfig_t *rxConfig, rxRuntimeConfig_t *rxRuntimeConfig)
 {
     UNUSED(rxConfig);
-    rxRuntimeConfig->channelCount = 8; // Limited to 8 channels due to MSP_SET_RAW_RC command.
-    if (callback)
-        *callback = rxMspReadRawRC;
 
-    return true;
+    rxRuntimeConfig->channelCount = MAX_SUPPORTED_RC_CHANNEL_COUNT;
+    rxRuntimeConfig->rxRefreshRate = 20000;
+
+    rxRuntimeConfig->rcReadRawFn = rxMspReadRawRC;
+    rxRuntimeConfig->rcFrameStatusFn = rxMspFrameStatus;
 }
+#endif

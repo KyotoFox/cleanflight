@@ -21,12 +21,11 @@ typedef enum {
     SENSOR_INDEX_GYRO = 0,
     SENSOR_INDEX_ACC,
     SENSOR_INDEX_BARO,
-    SENSOR_INDEX_MAG
+    SENSOR_INDEX_MAG,
+    SENSOR_INDEX_COUNT
 } sensorIndex_e;
 
-#define MAX_SENSORS_TO_DETECT (SENSOR_INDEX_MAG + 1)
-
-extern uint8_t detectedSensors[MAX_SENSORS_TO_DETECT];
+extern uint8_t detectedSensors[SENSOR_INDEX_COUNT];
 
 typedef struct int16_flightDynamicsTrims_s {
     int16_t roll;
@@ -34,7 +33,7 @@ typedef struct int16_flightDynamicsTrims_s {
     int16_t yaw;
 } flightDynamicsTrims_def_t;
 
-typedef union {
+typedef union flightDynamicsTrims_u {
     int16_t raw[3];
     flightDynamicsTrims_def_t values;
 } flightDynamicsTrims_t;
@@ -50,25 +49,5 @@ typedef enum {
     SENSOR_MAG = 1 << 3,
     SENSOR_SONAR = 1 << 4,
     SENSOR_GPS = 1 << 5,
-    SENSOR_GPSMAG = 1 << 6,
+    SENSOR_GPSMAG = 1 << 6
 } sensors_e;
-
-typedef enum {
-    ALIGN_DEFAULT = 0,                                      // driver-provided alignment
-    CW0_DEG = 1,
-    CW90_DEG = 2,
-    CW180_DEG = 3,
-    CW270_DEG = 4,
-    CW0_DEG_FLIP = 5,
-    CW90_DEG_FLIP = 6,
-    CW180_DEG_FLIP = 7,
-    CW270_DEG_FLIP = 8
-} sensor_align_e;
-
-typedef struct sensorAlignmentConfig_s {
-    sensor_align_e gyro_align;              // gyro alignment
-    sensor_align_e acc_align;               // acc alignment
-    sensor_align_e mag_align;               // mag alignment
-} sensorAlignmentConfig_t;
-
-extern int16_t heading;

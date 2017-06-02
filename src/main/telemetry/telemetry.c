@@ -15,55 +15,107 @@
  * along with Cleanflight.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
 
 #include "platform.h"
 
 #ifdef TELEMETRY
 
-#include "drivers/gpio.h"
+#include "common/utils.h"
+
+#include "config/parameter_group.h"
+#include "config/parameter_group_ids.h"
+
 #include "drivers/timer.h"
 #include "drivers/serial.h"
 #include "drivers/serial_softserial.h"
+
 #include "io/serial.h"
 
-#include "rx/rx.h"
-#include "io/rc_controls.h"
+#include "fc/config.h"
+#include "fc/rc_controls.h"
+#include "fc/runtime_config.h"
 
-#include "config/runtime_config.h"
-#include "config/config.h"
+#include "msp/msp_serial.h"
+
+#include "rx/rx.h"
 
 #include "telemetry/telemetry.h"
 #include "telemetry/frsky.h"
 #include "telemetry/hott.h"
-#include "telemetry/msp.h"
 #include "telemetry/smartport.h"
+#include "telemetry/ltm.h"
+#include "telemetry/jetiexbus.h"
+#include "telemetry/mavlink.h"
+#include "telemetry/crsf.h"
+#include "telemetry/srxl.h"
+#include "telemetry/ibus.h"
 
-static telemetryConfig_t *telemetryConfig;
 
-void useTelemetryConfig(telemetryConfig_t *telemetryConfigToUse)
-{
-    telemetryConfig = telemetryConfigToUse;
-}
+PG_REGISTER_WITH_RESET_TEMPLATE(telemetryConfig_t, telemetryConfig, PG_TELEMETRY_CONFIG, 0);
+
+#if defined(STM32F3)
+#define TELEMETRY_DEFAULT_INVERSION 1
+#else
+#define TELEMETRY_DEFAULT_INVERSION 0
+#endif
+
+PG_RESET_TEMPLATE(telemetryConfig_t, telemetryConfig,
+    .telemetry_inversion = TELEMETRY_DEFAULT_INVERSION,
+    .halfDuplex = 1,
+    .telemetry_switch = 0,
+    .gpsNoFixLatitude = 0,
+    .gpsNoFixLongitude = 0,
+    .frsky_coordinate_format = FRSKY_FORMAT_DMS,
+    .frsky_unit = FRSKY_UNIT_METRICS,
+    .frsky_vfas_precision = 0,
+    .frsky_vfas_cell_voltage = 0,
+    .hottAlarmSoundInterval = 5,
+    .pidValuesAsTelemetry = 0,
+    .report_cell_voltage = false
+);
 
 void telemetryInit(void)
 {
-    initFrSkyTelemetry(telemetryConfig);
-    initHoTTTelemetry(telemetryConfig);
-    initMSPTelemetry(telemetryConfig);
-    initSmartPortTelemetry(telemetryConfig);
+#ifdef TELEMETRY_FRSKY
+    initFrSkyTelemetry();
+#endif
+#ifdef TELEMETRY_HOTT
+    initHoTTTelemetry();
+#endif
+#ifdef TELEMETRY_SMARTPORT
+    initSmartPortTelemetry();
+#endif
+#ifdef TELEMETRY_LTM
+    initLtmTelemetry();
+#endif
+#ifdef TELEMETRY_JETIEXBUS
+    initJetiExBusTelemetry();
+#endif
+#ifdef TELEMETRY_MAVLINK
+    initMAVLinkTelemetry();
+#endif
+#ifdef TELEMETRY_CRSF
+    initCrsfTelemetry();
+#endif
+#ifdef TELEMETRY_SRXL
+    initSrxlTelemetry();
+#endif
+#ifdef TELEMETRY_IBUS
+    initIbusTelemetry();
+#endif
 
-    checkTelemetryState();
+    telemetryCheckState();
 }
 
-bool determineNewTelemetryEnabledState(portSharing_e portSharing)
+bool telemetryDetermineEnabledState(portSharing_e portSharing)
 {
     bool enabled = portSharing == PORTSHARING_NOT_SHARED;
 
     if (portSharing == PORTSHARING_SHARED) {
-        if (telemetryConfig->telemetry_switch)
+        if (telemetryConfig()->telemetry_switch)
             enabled = IS_RC_MODE_ACTIVE(BOXTELEMETRY);
         else
             enabled = ARMING_FLAG(ARMED);
@@ -72,20 +124,95 @@ bool determineNewTelemetryEnabledState(portSharing_e portSharing)
     return enabled;
 }
 
-void checkTelemetryState(void)
+bool telemetryCheckRxPortShared(const serialPortConfig_t *portConfig)
 {
+    if (portConfig->functionMask & FUNCTION_RX_SERIAL && portConfig->functionMask & TELEMETRY_SHAREABLE_PORT_FUNCTIONS_MASK) {
+        return true;
+    }
+#ifdef TELEMETRY_IBUS
+    if (   portConfig->functionMask & FUNCTION_TELEMETRY_IBUS
+        && portConfig->functionMask & FUNCTION_RX_SERIAL
+        && rxConfig()->serialrx_provider == SERIALRX_IBUS) {
+        // IBUS serial RX & telemetry
+        return true;
+    }
+#endif
+    return false;
+}
+
+serialPort_t *telemetrySharedPort = NULL;
+
+void telemetryCheckState(void)
+{
+#ifdef TELEMETRY_FRSKY
     checkFrSkyTelemetryState();
+#endif
+#ifdef TELEMETRY_HOTT
     checkHoTTTelemetryState();
-    checkMSPTelemetryState();
+#endif
+#ifdef TELEMETRY_SMARTPORT
     checkSmartPortTelemetryState();
+#endif
+#ifdef TELEMETRY_LTM
+    checkLtmTelemetryState();
+#endif
+#ifdef TELEMETRY_JETIEXBUS
+    checkJetiExBusTelemetryState();
+#endif
+#ifdef TELEMETRY_MAVLINK
+    checkMAVLinkTelemetryState();
+#endif
+#ifdef TELEMETRY_CRSF
+    checkCrsfTelemetryState();
+#endif
+#ifdef TELEMETRY_SRXL
+    checkSrxlTelemetryState();
+#endif
+#ifdef TELEMETRY_IBUS
+    checkIbusTelemetryState();
+#endif
 }
 
-void handleTelemetry(void)
+void telemetryProcess(uint32_t currentTime)
 {
+#ifdef TELEMETRY_FRSKY
     handleFrSkyTelemetry();
-    handleHoTTTelemetry();
-    handleMSPTelemetry();
+#endif
+#ifdef TELEMETRY_HOTT
+    handleHoTTTelemetry(currentTime);
+#else
+    UNUSED(currentTime);
+#endif
+#ifdef TELEMETRY_SMARTPORT
     handleSmartPortTelemetry();
+#endif
+#ifdef TELEMETRY_LTM
+    handleLtmTelemetry();
+#endif
+#ifdef TELEMETRY_JETIEXBUS
+    handleJetiExBusTelemetry();
+#endif
+#ifdef TELEMETRY_MAVLINK
+    handleMAVLinkTelemetry();
+#endif
+#ifdef TELEMETRY_CRSF
+    handleCrsfTelemetry(currentTime);
+#endif
+#ifdef TELEMETRY_SRXL
+    handleSrxlTelemetry(currentTime);
+#endif
+#ifdef TELEMETRY_IBUS
+    handleIbusTelemetry();
+#endif
 }
 
+#define TELEMETRY_FUNCTION_MASK (FUNCTION_TELEMETRY_FRSKY | FUNCTION_TELEMETRY_HOTT | FUNCTION_TELEMETRY_LTM | FUNCTION_TELEMETRY_SMARTPORT)
+
+void releaseSharedTelemetryPorts(void) {
+    serialPort_t *sharedPort = findSharedSerialPort(TELEMETRY_FUNCTION_MASK, FUNCTION_MSP);
+    while (sharedPort) {
+        mspSerialReleasePortIfAllocated(sharedPort);
+        sharedPort = findNextSharedSerialPort(TELEMETRY_FUNCTION_MASK, FUNCTION_MSP);
+    }
+}
 #endif

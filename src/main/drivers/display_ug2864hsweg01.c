@@ -17,21 +17,28 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
 
 #include "platform.h"
 
-#include "bus_i2c.h"
-#include "system.h"
+#include "drivers/bus_i2c.h"
+#include "drivers/system.h"
 
 #include "display_ug2864hsweg01.h"
+
+#if !defined(OLED_I2C_INSTANCE)
+#if defined(I2C_DEVICE)
+#define OLED_I2C_INSTANCE I2C_DEVICE
+#else
+#define OLED_I2C_INSTANCE I2C_NONE
+#endif
+#endif
 
 #define INVERSE_CHAR_FORMAT 0x7f // 0b01111111
 #define NORMAL_CHAR_FORMAT  0x00 // 0b00000000
 
 unsigned char CHAR_FORMAT = NORMAL_CHAR_FORMAT;
 
-static const uint8_t const multiWiiFont[][5] = { // Refer to "Times New Roman" Font Database... 5 x 7 font
+static const uint8_t multiWiiFont[][5] = { // Refer to "Times New Roman" Font Database... 5 x 7 font
         { 0x00, 0x00, 0x00, 0x00, 0x00 }, { 0x00, 0x00, 0x4F, 0x00, 0x00 }, //   (  1)  ! - 0x0021 Exclamation Mark
                 { 0x00, 0x07, 0x00, 0x07, 0x00 }, //   (  2)  " - 0x0022 Quotation Mark
                 { 0x14, 0x7F, 0x14, 0x7F, 0x14 }, //   (  3)  # - 0x0023 Number Sign
@@ -169,14 +176,15 @@ static const uint8_t const multiWiiFont[][5] = { // Refer to "Times New Roman" F
         };
 
 #define OLED_address   0x3C     // OLED at address 0x3C in 7bit
-void i2c_OLED_send_cmd(uint8_t command)
+
+static bool i2c_OLED_send_cmd(uint8_t command)
 {
-    i2cWrite(OLED_address, 0x80, command);
+    return i2cWrite(OLED_I2C_INSTANCE, OLED_address, 0x80, command);
 }
 
-static void i2c_OLED_send_byte(uint8_t val)
+static bool i2c_OLED_send_byte(uint8_t val)
 {
-    i2cWrite(OLED_address, 0x40, val);
+    return i2cWrite(OLED_I2C_INSTANCE, OLED_address, 0x40, val);
 }
 
 void i2c_OLED_clear_display(void)
@@ -246,10 +254,14 @@ void i2c_OLED_send_string(const char *string)
 /**
 * according to http://www.adafruit.com/datasheets/UG-2864HSWEG01.pdf Chapter 4.4 Page 15
 */
-#if 1
-void ug2864hsweg01InitI2C(void)
+bool ug2864hsweg01InitI2C(void)
 {
-    i2c_OLED_send_cmd(0xAE); // Set display OFF
+
+    // Set display OFF
+    if (!i2c_OLED_send_cmd(0xAE)) {
+        return false;
+    }
+
     i2c_OLED_send_cmd(0xD4); // Set Display Clock Divide Ratio / OSC Frequency
     i2c_OLED_send_cmd(0x80); // Display Clock Divide Ratio / OSC Frequency
     i2c_OLED_send_cmd(0xA8); // Set Multiplex Ratio
@@ -272,44 +284,8 @@ void ug2864hsweg01InitI2C(void)
     i2c_OLED_send_cmd(0xA4); // Set all pixels OFF
     i2c_OLED_send_cmd(0xA6); // Set display not inverted
     i2c_OLED_send_cmd(0xAF); // Set display On
-    i2c_OLED_clear_display();
-}
-#else
-void ug2864hsweg01InitI2C(void)
-{
-    i2c_OLED_send_cmd(0xae);    //display off
-    i2c_OLED_send_cmd(0xa4);          //SET All pixels OFF
-//  i2c_OLED_send_cmd(0xa5);            //SET ALL pixels ON
-    delay(50);
 
-//    i2c_OLED_send_cmd(0x8D); // charge pump
-//    i2c_OLED_send_cmd(0x14); // enable
-    i2c_OLED_send_cmd(0x20);            //Set Memory Addressing Mode
-    i2c_OLED_send_cmd(0x02); //Set Memory Addressing Mode to Page addressing mode(RESET)
-//  i2c_OLED_send_cmd(0xa0);      //colum address 0 mapped to SEG0 (POR)*** wires at bottom
-    i2c_OLED_send_cmd(0xa1); //colum address 127 mapped to SEG0 (POR) ** wires at top of board
-//  i2c_OLED_send_cmd(0xC0);            // Scan from Right to Left (POR)         *** wires at bottom
-    i2c_OLED_send_cmd(0xC8); // Scan from Left to Right               ** wires at top
-    i2c_OLED_send_cmd(0xa6);            // Set WHITE chars on BLACK backround
-//  i2c_OLED_send_cmd(0xa7);            // Set BLACK chars on WHITE backround
-    i2c_OLED_send_cmd(0x81); // Setup CONTRAST CONTROL, following byte is the contrast Value
-    i2c_OLED_send_cmd(0xaf); // contrast value between 1 ( == dull) to 256 ( == bright)
-//  i2c_OLED_send_cmd(0xd3);            // Display Offset :
-//  i2c_OLED_send_cmd(0x0);            // 0
-//  delay(20);
-//  i2c_OLED_send_cmd(0x40);            // Display start line [0;63] -> [0x40;0x7f]
-//  delay(20);
-#ifdef DISPLAY_FONT_DSIZE
-    i2c_OLED_send_cmd(0xd6);            // zoom
-    i2c_OLED_send_cmd(0x01);// on
-#else
-//    i2c_OLED_send_cmd(0xd6);            // zoom
-//    i2c_OLED_send_cmd(0x00);            // off
-#endif
-    delay(20);
-    i2c_OLED_send_cmd(0xaf);          //display on
-    delay(20);
     i2c_OLED_clear_display();
-}
 
-#endif
+    return true;
+}

@@ -17,6 +17,10 @@
 
 #pragma once
 
+#include "common/time.h"
+
+#include "config/parameter_group.h"
+
 #define LAT 0
 #define LON 1
 
@@ -49,7 +53,7 @@ typedef enum {
 
 typedef enum {
     GPS_AUTOCONFIG_OFF = 0,
-    GPS_AUTOCONFIG_ON,
+    GPS_AUTOCONFIG_ON
 } gpsAutoConfig_e;
 
 typedef enum {
@@ -66,6 +70,8 @@ typedef struct gpsConfig_s {
     gpsAutoBaud_e autoBaud;
 } gpsConfig_t;
 
+PG_DECLARE(gpsConfig_t, gpsConfig);
+
 typedef struct gpsCoordinateDDDMMmmmm_s {
     int16_t dddmm;
     int16_t mmmm;
@@ -76,12 +82,10 @@ typedef enum {
     GPS_MESSAGE_STATE_IDLE = 0,
     GPS_MESSAGE_STATE_INIT,
     GPS_MESSAGE_STATE_SBAS,
-    GPS_MESSAGE_STATE_MAX = GPS_MESSAGE_STATE_SBAS
+    GPS_MESSAGE_STATE_ENTRY_COUNT
 } gpsMessageState_e;
 
-#define GPS_MESSAGE_STATE_ENTRY_COUNT (GPS_MESSAGE_STATE_MAX + 1)
-
-typedef struct gpsData_t {
+typedef struct gpsData_s {
     uint8_t state;                  // GPS thread state. Used for detecting cable disconnects and configuring attached devices
     uint8_t baudrateIndex;          // index into auto-detecting or current baudrate
     uint32_t errors;                // gps error counter - crc error/lost of data/sync etc..
@@ -104,6 +108,7 @@ extern uint8_t GPS_numSat;
 extern uint16_t GPS_hdop;                  // GPS signal quality
 extern uint8_t GPS_update;                 // it's a binary toogle to distinct a GPS position update
 extern uint32_t GPS_packetCount;
+extern uint32_t GPS_svInfoReceivedCount;
 extern uint16_t GPS_altitude;              // altitude in 0.1m
 extern uint16_t GPS_speed;                 // speed in 0.1m/s
 extern uint16_t GPS_ground_course;         // degrees * 10
@@ -116,7 +121,9 @@ extern uint8_t GPS_svinfo_cno[16];         // Carrier to Noise Ratio (Signal Str
 #define GPS_DBHZ_MIN 0
 #define GPS_DBHZ_MAX 55
 
-
-void gpsThread(void);
+void gpsInit(void);
+void gpsUpdate(timeUs_t currentTimeUs);
 bool gpsNewFrame(uint8_t c);
-void updateGpsIndicator(uint32_t currentTime);
+struct serialPort_s;
+void gpsEnablePassthrough(struct serialPort_s *gpsPassthroughPort);
+

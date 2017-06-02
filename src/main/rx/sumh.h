@@ -17,4 +17,4 @@
 
 #pragma once
 
-bool sumhFrameComplete(void);
+bool sumhInit(const rxConfig_t *rxConfig, rxRuntimeConfig_t *rxRuntimeConfig);

@@ -16,8 +16,8 @@
  *
  *        http://www.st.com/software_license_agreement_liberty_v2
  *
- * Unless required by applicable law or agreed to in writing, software 
- * distributed under the License is distributed on an "AS IS" BASIS, 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
@@ -37,7 +37,11 @@
 
 #include <stdbool.h>
 #include "drivers/system.h"
+#include "drivers/usb_io.h"
 #include "drivers/nvic.h"
+
+#include "common/utils.h"
+
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -65,13 +69,13 @@ void Set_System(void)
 {
 #if !defined(STM32L1XX_MD) && !defined(STM32L1XX_HD) && !defined(STM32L1XX_MD_PLUS)
     GPIO_InitTypeDef GPIO_InitStructure;
-#endif /* STM32L1XX_MD && STM32L1XX_XD */  
+#endif /* STM32L1XX_MD && STM32L1XX_XD */
 
 #if defined(USB_USE_EXTERNAL_PULLUP)
     GPIO_InitTypeDef GPIO_InitStructure;
-#endif /* USB_USE_EXTERNAL_PULLUP */ 
+#endif /* USB_USE_EXTERNAL_PULLUP */
 
-    /*!< At this stage the microcontroller clock setting is already configured, 
+    /*!< At this stage the microcontroller clock setting is already configured,
      this is done through SystemInit() function which is called from startup
      file (startup_stm32f10x_xx.s) before to branch to application main.
      To reconfigure the default setting of SystemInit() function, refer to
@@ -80,32 +84,9 @@ void Set_System(void)
 #if defined(STM32L1XX_MD) || defined(STM32L1XX_HD)|| defined(STM32L1XX_MD_PLUS) || defined(STM32F37X) || defined(STM32F303xC)
     /* Enable the SYSCFG module clock */
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
-#endif /* STM32L1XX_XD */ 
+#endif /* STM32L1XX_XD */
 
-    /*Pull down PA12 to create USB Disconnect Pulse*/     // HJI
-#if defined(STM32F303xC)                                    // HJI
-    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA, ENABLE);   // HJI
-
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_12;          // HJI
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;     // HJI
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;        // HJI
-    GPIO_InitStructure.GPIO_OType = GPIO_OType_OD;        // HJI
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;     // HJI
-#else
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE); // HJI
-
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_12;// HJI
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;// HJI
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;// HJI
-#endif
-
-    GPIO_Init(GPIOA, &GPIO_InitStructure);                // HJI
-
-    GPIO_ResetBits(GPIOA, GPIO_Pin_12);                   // HJI
-
-    delay(200);                                           // HJI
-
-    GPIO_SetBits(GPIOA, GPIO_Pin_12);                     // HJI
+    usbGenerateDisconnectPulse();
 
 #if defined(STM32F37X) || defined(STM32F303xC)
 
@@ -214,6 +195,30 @@ void USB_Interrupts_Config(void)
     NVIC_Init(&NVIC_InitStructure);
 }
 
+#ifdef STM32F10X
+
+/*******************************************************************************
+ * Function Name  : USB_Interrupts_Disable
+ * Description    : Disables the USB interrupts
+ * Input          : None.
+ * Return         : None.
+ *******************************************************************************/
+void USB_Interrupts_Disable(void)
+{
+    NVIC_InitTypeDef NVIC_InitStructure;
+
+    /* Disable the USB interrupt */
+    NVIC_InitStructure.NVIC_IRQChannel    = USB_LP_CAN1_RX0_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = DISABLE;
+    NVIC_Init(&NVIC_InitStructure);
+
+    /* Disable the USB Wake-up interrupt */
+    NVIC_InitStructure.NVIC_IRQChannel    = USBWakeUp_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = DISABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
+#endif
+
 /*******************************************************************************
  * Function Name  : USB_Cable_Config
  * Description    : Software Connection/Disconnection of USB Cable
@@ -222,6 +227,7 @@ void USB_Interrupts_Config(void)
  *******************************************************************************/
 void USB_Cable_Config(FunctionalState NewState)
 {
+    UNUSED(NewState);
 }
 
 /*******************************************************************************
@@ -273,12 +279,12 @@ static void IntToUnicode(uint32_t value, uint8_t *pbuf, uint8_t len)
 
 /*******************************************************************************
  * Function Name  : Send DATA .
- * Description    : send the data received from the STM32 to the PC through USB  
+ * Description    : send the data received from the STM32 to the PC through USB
  * Input          : None.
  * Output         : None.
  * Return         : None.
  *******************************************************************************/
-uint32_t CDC_Send_DATA(uint8_t *ptrBuffer, uint8_t sendLength)
+uint32_t CDC_Send_DATA(const uint8_t *ptrBuffer, uint32_t sendLength)
 {
     /* Last transmission hasn't finished, abort */
     if (packetSent) {
@@ -299,6 +305,12 @@ uint32_t CDC_Send_DATA(uint8_t *ptrBuffer, uint8_t sendLength)
     }
 
     return sendLength;
+}
+
+uint32_t CDC_Send_FreeBytes(void)
+{
+    /* this driver is blocking, so the buffer is unlimited */
+    return 255;
 }
 
 /*******************************************************************************
@@ -334,6 +346,11 @@ uint32_t CDC_Receive_DATA(uint8_t* recvBuf, uint32_t len)
     return len;
 }
 
+uint32_t CDC_Receive_BytesAvailable(void)
+{
+    return receiveLength;
+}
+
 /*******************************************************************************
  * Function Name  : usbIsConfigured.
  * Description    : Determines if USB VCP is configured or not
@@ -356,6 +373,19 @@ uint8_t usbIsConfigured(void)
 uint8_t usbIsConnected(void)
 {
     return (bDeviceState != UNCONNECTED);
+}
+
+
+/*******************************************************************************
+ * Function Name  : CDC_BaudRate.
+ * Description    : Get the current baud rate
+ * Input          : None.
+ * Output         : None.
+ * Return         : Baud rate in bps
+ *******************************************************************************/
+uint32_t CDC_BaudRate(void)
+{
+    return Virtual_Com_Port_GetBaudRate();
 }
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

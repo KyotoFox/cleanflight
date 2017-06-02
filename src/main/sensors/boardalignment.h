@@ -17,11 +17,15 @@
 
 #pragma once
 
+#include "config/parameter_group.h"
+
 typedef struct boardAlignment_s {
-    int16_t rollDegrees;
-    int16_t pitchDegrees;
-    int16_t yawDegrees;
+    int32_t rollDegrees;
+    int32_t pitchDegrees;
+    int32_t yawDegrees;
 } boardAlignment_t;
 
-void alignSensors(int16_t *src, int16_t *dest, uint8_t rotation);
-void initBoardAlignment(boardAlignment_t *boardAlignment);
+PG_DECLARE(boardAlignment_t, boardAlignment);
+
+void alignSensors(int32_t *dest, uint8_t rotation);
+void initBoardAlignment(const boardAlignment_t *boardAlignment);

@@ -17,13 +17,75 @@
 
 #pragma once
 
+#define USE_PARAMETER_GROUPS
+
+#define U_ID_0 0
+#define U_ID_1 1
+#define U_ID_2 2
+
+#define MAX_PROFILE_COUNT 3
 #define MAG
 #define BARO
 #define GPS
+#define USE_DASHBOARD
 #define TELEMETRY
 #define LED_STRIP
 #define USE_SERVOS
+#define TRANSPONDER
 
-#define SERIAL_PORT_COUNT 4
+typedef enum
+{
+    Mode_TEST = 0x0,
+    Mode_Out_PP = 0x10
+} GPIO_Mode;
 
-#define MAX_SIMULTANEOUS_ADJUSTMENT_COUNT 6
+typedef enum {RESET = 0, SET = !RESET} FlagStatus, ITStatus;
+typedef enum {DISABLE = 0, ENABLE = !DISABLE} FunctionalState;
+typedef enum {TEST_IRQ = 0 } IRQn_Type;
+typedef enum {
+    EXTI_Trigger_Rising = 0x08,
+    EXTI_Trigger_Falling = 0x0C,
+    EXTI_Trigger_Rising_Falling = 0x10
+} EXTITrigger_TypeDef;
+
+typedef struct
+{
+    void *test;
+} GPIO_TypeDef;
+
+typedef struct
+{
+    void* test;
+} TIM_TypeDef;
+
+typedef struct
+{
+    void* test;
+} TIM_OCInitTypeDef;
+
+typedef struct {
+    void* test;
+} DMA_TypeDef;
+
+typedef struct {
+    void* test;
+} DMA_Channel_TypeDef;
+
+uint8_t DMA_GetFlagStatus(void *);
+void DMA_Cmd(DMA_Channel_TypeDef*, FunctionalState );
+void DMA_ClearFlag(uint32_t);
+
+typedef struct
+{
+    void* test;
+} SPI_TypeDef;
+
+typedef struct
+{
+    void* test;
+} USART_TypeDef;
+
+#define WS2811_DMA_TC_FLAG (void *)1
+#define WS2811_DMA_HANDLER_IDENTIFER 0
+
+#include "target.h"

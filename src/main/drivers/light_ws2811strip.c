@@ -23,20 +23,32 @@
  *
  * Currently the timings are 0 = 350ns high/800ns and 1 = 700ns high/650ns low.
  */
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
-#include "platform.h"
+#include <platform.h>
 
-#include "build_config.h"
+#ifdef LED_STRIP
+
+#include "build/build_config.h"
 
 #include "common/color.h"
 #include "common/colorconversion.h"
-#include "drivers/light_ws2811strip.h"
+#include "dma.h"
+#include "drivers/io.h"
+#include "light_ws2811strip.h"
 
+#if defined(STM32F1) || defined(STM32F3)
 uint8_t ledStripDMABuffer[WS2811_DMA_BUFFER_SIZE];
+#else
+uint32_t ledStripDMABuffer[WS2811_DMA_BUFFER_SIZE];
+#endif
 volatile uint8_t ws2811LedDataTransferInProgress = 0;
+
+uint16_t BIT_COMPARE_1 = 0;
+uint16_t BIT_COMPARE_0 = 0;
 
 static hsvColor_t ledColorBuffer[WS2811_LED_STRIP_LENGTH];
 
@@ -76,10 +88,13 @@ void setStripColors(const hsvColor_t *colors)
     }
 }
 
-void ws2811LedStripInit(void)
+void ws2811LedStripInit(ioTag_t ioTag)
 {
-    memset(&ledStripDMABuffer, 0, WS2811_DMA_BUFFER_SIZE);
-    ws2811LedStripHardwareInit();
+    memset(ledStripDMABuffer, 0, sizeof(ledStripDMABuffer));
+    ws2811LedStripHardwareInit(ioTag);
+
+    const hsvColor_t hsv_white = { 0, 255, 255 };
+    setStripColor(&hsv_white);
     ws2811UpdateStrip();
 }
 
@@ -128,12 +143,11 @@ STATIC_UNIT_TESTED void updateLEDDMABuffer(uint8_t componentValue)
  */
 void ws2811UpdateStrip(void)
 {
-    static uint32_t waitCounter = 0;
     static rgbColor24bpp_t *rgb24;
 
-    // wait until previous transfer completes
-    while(ws2811LedDataTransferInProgress) {
-        waitCounter++;
+    // don't wait - risk of infinite block, just get an update next time round
+    if (ws2811LedDataTransferInProgress) {
+        return;
     }
 
     dmaBufferOffset = 0;                // reset buffer memory index
@@ -160,3 +174,4 @@ void ws2811UpdateStrip(void)
     ws2811LedStripDMAEnable();
 }
 
+#endif

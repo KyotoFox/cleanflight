@@ -17,37 +17,35 @@
 
 #pragma once
 
-#include <stdint.h>
-
-#include "common/axis.h"
-#include "flight/mixer.h"
 #include "blackbox/blackbox_fielddefs.h"
+#include "common/time.h"
+#include "config/parameter_group.h"
 
-typedef struct blackboxValues_t {
-    uint32_t time;
-
-    int32_t axisPID_P[XYZ_AXIS_COUNT], axisPID_I[XYZ_AXIS_COUNT], axisPID_D[XYZ_AXIS_COUNT];
-
-    int16_t rcCommand[4];
-    int16_t gyroData[XYZ_AXIS_COUNT];
-    int16_t accSmooth[XYZ_AXIS_COUNT];
-    int16_t motor[MAX_SUPPORTED_MOTORS];
-    int16_t servo[MAX_SUPPORTED_SERVOS];
-
-    uint16_t vbatLatest;
-    uint16_t amperageLatest;
-
-#ifdef BARO
-    int32_t BaroAlt;
+typedef enum BlackboxDevice {
+    BLACKBOX_DEVICE_NONE = 0,
+#ifdef USE_FLASHFS
+    BLACKBOX_DEVICE_FLASH = 1,
 #endif
-#ifdef MAG
-    int16_t magADC[XYZ_AXIS_COUNT];
+#ifdef USE_SDCARD
+    BLACKBOX_DEVICE_SDCARD = 2,
 #endif
-} blackboxValues_t;
+    BLACKBOX_DEVICE_SERIAL = 3
+} BlackboxDevice_e;
+
+typedef struct blackboxConfig_s {
+    uint8_t rate_num;
+    uint8_t rate_denom;
+    uint8_t device;
+    uint8_t on_motor_test;
+    uint8_t record_acc;
+} blackboxConfig_t;
+
+PG_DECLARE(blackboxConfig_t, blackboxConfig);
 
 void blackboxLogEvent(FlightLogEvent event, flightLogEventData_t *data);
 
-void initBlackbox(void);
-void handleBlackbox(void);
-void startBlackbox(void);
-void finishBlackbox(void);
+void blackboxInit(void);
+void blackboxUpdate(timeUs_t currentTimeUs);
+void blackboxValidateConfig(void);
+void blackboxFinish(void);
+bool blackboxMayEditConfig(void);

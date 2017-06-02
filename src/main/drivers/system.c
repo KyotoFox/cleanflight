@@ -17,45 +17,101 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
 
 #include "platform.h"
 
-#include "build_config.h"
-
-#include "gpio.h"
+#include "drivers/gpio.h"
 #include "light_led.h"
 #include "sound_beeper.h"
-#include "nvic.h"
+#include "drivers/nvic.h"
+#include "build/atomic.h"
 
-#include "system.h"
+#include "drivers/system.h"
 
 // cycles per microsecond
-static volatile uint32_t usTicks = 0;
+static uint32_t usTicks = 0;
 // current uptime for 1kHz systick timer. will rollover after 49 days. hopefully we won't care.
 static volatile uint32_t sysTickUptime = 0;
+// cached value of RCC->CSR
+uint32_t cachedRccCsrValue;
 
-static void cycleCounterInit(void)
+void cycleCounterInit(void)
 {
+#if defined(USE_HAL_DRIVER)
+    usTicks = HAL_RCC_GetSysClockFreq() / 1000000;
+#else
     RCC_ClocksTypeDef clocks;
     RCC_GetClocksFreq(&clocks);
     usTicks = clocks.SYSCLK_Frequency / 1000000;
+#endif
 }
 
 // SysTick
+
+static volatile int sysTickPending = 0;
+
 void SysTick_Handler(void)
 {
-    sysTickUptime++;
+    ATOMIC_BLOCK(NVIC_PRIO_MAX) {
+        sysTickUptime++;
+        sysTickPending = 0;
+        (void)(SysTick->CTRL);
+    }
+#ifdef USE_HAL_DRIVER
+    // used by the HAL for some timekeeping and timeouts, should always be 1ms
+    HAL_IncTick();
+#endif
 }
 
 // Return system uptime in microseconds (rollover in 70minutes)
+
+uint32_t microsISR(void)
+{
+    register uint32_t ms, pending, cycle_cnt;
+
+    ATOMIC_BLOCK(NVIC_PRIO_MAX) {
+        cycle_cnt = SysTick->VAL;
+
+        if (SysTick->CTRL & SysTick_CTRL_COUNTFLAG_Msk) {
+            // Update pending.
+            // Record it for multiple calls within the same rollover period
+            // (Will be cleared when serviced).
+            // Note that multiple rollovers are not considered.
+
+            sysTickPending = 1;
+
+            // Read VAL again to ensure the value is read after the rollover.
+
+            cycle_cnt = SysTick->VAL;
+        }
+
+        ms = sysTickUptime;
+        pending = sysTickPending;
+    }
+
+    return ((ms + pending) * 1000) + (usTicks * 1000 - cycle_cnt) / usTicks;
+}
+
 uint32_t micros(void)
 {
     register uint32_t ms, cycle_cnt;
+
+    // Call microsISR() in interrupt and elevated (non-zero) BASEPRI context
+
+    if ((SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) || (__get_BASEPRI())) {
+        return microsISR();
+    }
+
     do {
         ms = sysTickUptime;
         cycle_cnt = SysTick->VAL;
+        /*
+         * If the SysTick timer expired during the previous instruction, we need to give it a little time for that
+         * interrupt to be delivered before we can recheck sysTickUptime:
+         */
+        asm volatile("\tnop\n");
     } while (ms != sysTickUptime);
+
     return (ms * 1000) + (usTicks * 1000 - cycle_cnt) / usTicks;
 }
 
@@ -63,41 +119,6 @@ uint32_t micros(void)
 uint32_t millis(void)
 {
     return sysTickUptime;
-}
-
-void systemInit(void)
-{
-#ifdef CC3D
-    /* Accounts for OP Bootloader, set the Vector Table base address as specified in .ld file */
-    extern void *isr_vector_table_base;
-
-    NVIC_SetVectorTable((uint32_t)&isr_vector_table_base, 0x0);
-#endif
-    // Configure NVIC preempt/priority groups
-    NVIC_PriorityGroupConfig(NVIC_PRIORITY_GROUPING);
-
-#ifdef STM32F10X
-    // Turn on clocks for stuff we use
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
-#endif
-
-    RCC_ClearFlag();
-
-
-    enableGPIOPowerUsageAndNoiseReductions();
-
-
-#ifdef STM32F10X
-    // Turn off JTAG port 'cause we're using the GPIO for leds
-#define AFIO_MAPR_SWJ_CFG_NO_JTAG_SW            (0x2 << 24)
-    AFIO->MAPR |= AFIO_MAPR_SWJ_CFG_NO_JTAG_SW;
-#endif
-
-    // Init cycle counter
-    cycleCounterInit();
-
-    // SysTick
-    SysTick_Config(SystemCoreClock / 1000);
 }
 
 #if 1
@@ -140,19 +161,49 @@ void delay(uint32_t ms)
         delayMicroseconds(1000);
 }
 
-// FIXME replace mode with an enum so usage can be tracked, currently mode is a magic number
-void failureMode(uint8_t mode)
+#define SHORT_FLASH_DURATION 50
+#define CODE_FLASH_DURATION 250
+
+void failureMode(failureMode_e mode)
 {
-    LED1_ON;
-    LED0_OFF;
-    while (1) {
-        LED1_TOGGLE;
-        LED0_TOGGLE;
-        delay(475 * mode - 2);
-        BEEP_ON;
-        delay(25);
-        BEEP_OFF;
+    int codeRepeatsRemaining = 10;
+    int codeFlashesRemaining;
+    int shortFlashesRemaining;
+
+    while (codeRepeatsRemaining--) {
+        LED1_ON;
+        LED0_OFF;
+        shortFlashesRemaining = 5;
+        codeFlashesRemaining = mode + 1;
+        uint8_t flashDuration = SHORT_FLASH_DURATION;
+
+        while (shortFlashesRemaining || codeFlashesRemaining) {
+            LED1_TOGGLE;
+            LED0_TOGGLE;
+            BEEP_ON;
+            delay(flashDuration);
+
+            LED1_TOGGLE;
+            LED0_TOGGLE;
+            BEEP_OFF;
+            delay(flashDuration);
+
+            if (shortFlashesRemaining) {
+                shortFlashesRemaining--;
+                if (shortFlashesRemaining == 0) {
+                    delay(500);
+                    flashDuration = CODE_FLASH_DURATION;
+                }
+            } else {
+                codeFlashesRemaining--;
+            }
+        }
+        delay(1000);
     }
+
+#ifdef DEBUG
+    systemReset();
+#else
+    systemResetToBootloader();
+#endif
 }
-
-

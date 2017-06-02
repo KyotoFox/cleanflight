@@ -21,17 +21,17 @@
 
 #include "platform.h"
 
-#include "build_config.h"
+#ifdef SERIAL_RX
+
+#include "common/utils.h"
 
 #include "drivers/system.h"
 
-#include "drivers/gpio.h"
-#include "drivers/inverter.h"
-
-#include "drivers/serial.h"
-#include "drivers/serial_uart.h"
 #include "io/serial.h"
 
+#ifdef TELEMETRY
+#include "telemetry/telemetry.h"
+#endif
 #include "rx/rx.h"
 #include "rx/sbus.h"
 
@@ -65,37 +65,19 @@ static uint16_t sbusStateFlags = 0;
 #define SBUS_FRAME_SIZE 25
 
 #define SBUS_FRAME_BEGIN_BYTE 0x0F
-#define SBUS_FRAME_END_BYTE 0x00
 
 #define SBUS_BAUDRATE 100000
+
+#if !defined(SBUS_PORT_OPTIONS)
+#define SBUS_PORT_OPTIONS (SERIAL_STOPBITS_2 | SERIAL_PARITY_EVEN)
+#endif
 
 #define SBUS_DIGITAL_CHANNEL_MIN 173
 #define SBUS_DIGITAL_CHANNEL_MAX 1812
 
 static bool sbusFrameDone = false;
-static void sbusDataReceive(uint16_t c);
-static uint16_t sbusReadRawRC(rxRuntimeConfig_t *rxRuntimeConfig, uint8_t chan);
 
 static uint32_t sbusChannelData[SBUS_MAX_CHANNEL];
-
-bool sbusInit(rxConfig_t *rxConfig, rxRuntimeConfig_t *rxRuntimeConfig, rcReadRawDataPtr *callback)
-{
-    int b;
-    for (b = 0; b < SBUS_MAX_CHANNEL; b++)
-        sbusChannelData[b] = (1.6f * rxConfig->midrc) - 1408;
-    if (callback)
-        *callback = sbusReadRawRC;
-    rxRuntimeConfig->channelCount = SBUS_MAX_CHANNEL;
-
-    serialPortConfig_t *portConfig = findSerialPortConfig(FUNCTION_RX_SERIAL);
-    if (!portConfig) {
-        return false;
-    }
-
-    serialPort_t *sBusPort = openSerialPort(portConfig->identifier, FUNCTION_RX_SERIAL, sbusDataReceive, SBUS_BAUDRATE, (portMode_t)(MODE_RX | MODE_SBUS), SERIAL_INVERTED);
-
-    return sBusPort != NULL;
-}
 
 #define SBUS_FLAG_CHANNEL_17        (1 << 0)
 #define SBUS_FLAG_CHANNEL_18        (1 << 1)
@@ -122,6 +104,13 @@ struct sbusFrame_s {
     unsigned int chan14 : 11;
     unsigned int chan15 : 11;
     uint8_t flags;
+    /**
+     * The endByte is 0x00 on FrSky and some futaba RX's, on Some SBUS2 RX's the value indicates the telemetry byte that is sent after every 4th sbus frame.
+     *
+     * See https://github.com/cleanflight/cleanflight/issues/590#issuecomment-101027349
+     * and
+     * https://github.com/cleanflight/cleanflight/issues/590#issuecomment-101706023
+     */
     uint8_t endByte;
 } __attribute__ ((__packed__));
 
@@ -145,8 +134,6 @@ static void sbusDataReceive(uint16_t c)
         sbusFramePosition = 0;
     }
 
-    sbusFrame.bytes[sbusFramePosition] = (uint8_t)c;
-
     if (sbusFramePosition == 0) {
         if (c != SBUS_FRAME_BEGIN_BYTE) {
             return;
@@ -154,24 +141,23 @@ static void sbusDataReceive(uint16_t c)
         sbusFrameStartAt = now;
     }
 
-    sbusFramePosition++;
-
-    if (sbusFramePosition == SBUS_FRAME_SIZE) {
-        if (sbusFrame.frame.endByte == SBUS_FRAME_END_BYTE) {
+    if (sbusFramePosition < SBUS_FRAME_SIZE) {
+        sbusFrame.bytes[sbusFramePosition++] = (uint8_t)c;
+        if (sbusFramePosition < SBUS_FRAME_SIZE) {
+            sbusFrameDone = false;
+        } else {
             sbusFrameDone = true;
 #ifdef DEBUG_SBUS_PACKETS
-            debug[2] = sbusFrameTime;
+        debug[2] = sbusFrameTime;
 #endif
         }
-    } else {
-        sbusFrameDone = false;
     }
 }
 
-bool sbusFrameComplete(void)
+static uint8_t sbusFrameStatus(void)
 {
     if (!sbusFrameDone) {
-        return false;
+        return RX_FRAME_PENDING;
     }
     sbusFrameDone = false;
 
@@ -222,19 +208,60 @@ bool sbusFrameComplete(void)
         debug[0] = sbusStateFlags;
 #endif
         // RX *should* still be sending valid channel data, so use it.
-        return false;
+        return RX_FRAME_COMPLETE | RX_FRAME_FAILSAFE;
     }
 
 #ifdef DEBUG_SBUS_PACKETS
     debug[0] = sbusStateFlags;
 #endif
-    return true;
+    return RX_FRAME_COMPLETE;
 }
 
-static uint16_t sbusReadRawRC(rxRuntimeConfig_t *rxRuntimeConfig, uint8_t chan)
+static uint16_t sbusReadRawRC(const rxRuntimeConfig_t *rxRuntimeConfig, uint8_t chan)
 {
     UNUSED(rxRuntimeConfig);
     // Linear fitting values read from OpenTX-ppmus and comparing with values received by X4R
     // http://www.wolframalpha.com/input/?i=linear+fit+%7B173%2C+988%7D%2C+%7B1812%2C+2012%7D%2C+%7B993%2C+1500%7D
-    return (0.625f * sbusChannelData[chan]) + 880;
+    return (5 * sbusChannelData[chan] / 8) + 880;
 }
+
+bool sbusInit(const rxConfig_t *rxConfig, rxRuntimeConfig_t *rxRuntimeConfig)
+{
+    for (int b = 0; b < SBUS_MAX_CHANNEL; b++) {
+        sbusChannelData[b] = (16 * rxConfig->midrc) / 10 - 1408;
+    }
+
+    rxRuntimeConfig->channelCount = SBUS_MAX_CHANNEL;
+    rxRuntimeConfig->rxRefreshRate = 11000;
+
+    rxRuntimeConfig->rcReadRawFn = sbusReadRawRC;
+    rxRuntimeConfig->rcFrameStatusFn = sbusFrameStatus;
+
+    const serialPortConfig_t *portConfig = findSerialPortConfig(FUNCTION_RX_SERIAL);
+    if (!portConfig) {
+        return false;
+    }
+
+#ifdef TELEMETRY
+    bool portShared = telemetryCheckRxPortShared(portConfig);
+#else
+    bool portShared = false;
+#endif
+
+    serialPort_t *sBusPort = openSerialPort(portConfig->identifier, 
+        FUNCTION_RX_SERIAL, 
+        sbusDataReceive, 
+        SBUS_BAUDRATE, 
+        portShared ? MODE_RXTX : MODE_RX, 
+        SBUS_PORT_OPTIONS | (rxConfig->sbus_inversion ? SERIAL_INVERTED : 0) | (rxConfig->halfDuplex ? SERIAL_BIDIR : 0)
+        );
+
+#ifdef TELEMETRY
+    if (portShared) {
+        telemetrySharedPort = sBusPort;
+    }
+#endif
+
+    return sBusPort != NULL;
+}
+#endif

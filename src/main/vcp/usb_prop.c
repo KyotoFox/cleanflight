@@ -16,8 +16,8 @@
  *
  *        http://www.st.com/software_license_agreement_liberty_v2
  *
- * Unless required by applicable law or agreed to in writing, software 
- * distributed under the License is distributed on an "AS IS" BASIS, 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
@@ -87,6 +87,10 @@ ONE_DESCRIPTOR String_Descriptor[4] = { { (uint8_t*)Virtual_Com_Port_StringLangI
  *******************************************************************************/
 void Virtual_Com_Port_init(void)
 {
+#ifdef STM32F10X
+    /* Make absolutly sure interrupts are disabled. */
+    USB_Interrupts_Disable();
+#endif
 
     /* Update the serial number string descriptor with the data from the unique
      ID*/
@@ -356,6 +360,18 @@ uint8_t *Virtual_Com_Port_SetLineCoding(uint16_t Length)
         return NULL;
     }
     return (uint8_t *)&linecoding;
+}
+
+/*******************************************************************************
+ * Function Name  : Virtual_Com_Port_GetBaudRate.
+ * Description    : Get the current baudrate
+ * Input          : None.
+ * Output         : None.
+ * Return         : baudrate in bps
+ *******************************************************************************/
+uint32_t Virtual_Com_Port_GetBaudRate(void)
+{
+    return linecoding.bitrate;
 }
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

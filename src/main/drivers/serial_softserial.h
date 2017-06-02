@@ -24,46 +24,13 @@ typedef enum {
     SOFTSERIAL2
 } softSerialPortIndex_e;
 
-typedef struct softSerial_s {
-    serialPort_t     port;
-
-    const timerHardware_t *rxTimerHardware;
-    volatile uint8_t rxBuffer[SOFTSERIAL_BUFFER_SIZE];
-
-    const timerHardware_t *txTimerHardware;
-    volatile uint8_t txBuffer[SOFTSERIAL_BUFFER_SIZE];
-
-    uint8_t          isSearchingForStartBit;
-    uint8_t          rxBitIndex;
-    uint8_t          rxLastLeadingEdgeAtBitIndex;
-    uint8_t          rxEdge;
-
-    uint8_t          isTransmittingData;
-    int8_t           bitsLeftToTransmit;
-
-    uint16_t         internalTxBuffer;  // includes start and stop bits
-    uint16_t         internalRxBuffer;  // includes start and stop bits
-
-    uint16_t         transmissionErrors;
-    uint16_t         receiveErrors;
-
-    uint8_t          softSerialPortIndex;
-
-    timerCCHandlerRec_t timerCb;
-    timerCCHandlerRec_t edgeCb;
-} softSerial_t;
-
-extern timerHardware_t* serialTimerHardware;
-extern softSerial_t softSerialPorts[];
-
-extern const struct serialPortVTable softSerialVTable[];
-
-serialPort_t *openSoftSerial(softSerialPortIndex_e portIndex, serialReceiveCallbackPtr callback, uint32_t baud, serialInversion_e inversion);
+serialPort_t *openSoftSerial(softSerialPortIndex_e portIndex, serialReceiveCallbackPtr rxCallback, uint32_t baud, portMode_t mode, portOptions_t options);
 
 // serialPort API
 void softSerialWriteByte(serialPort_t *instance, uint8_t ch);
-uint8_t softSerialTotalBytesWaiting(serialPort_t *instance);
+uint32_t softSerialRxBytesWaiting(const serialPort_t *instance);
+uint32_t softSerialTxBytesFree(const serialPort_t *instance);
 uint8_t softSerialReadByte(serialPort_t *instance);
 void softSerialSetBaudRate(serialPort_t *s, uint32_t baudRate);
-bool isSoftSerialTransmitBufferEmpty(serialPort_t *s);
+bool isSoftSerialTransmitBufferEmpty(const serialPort_t *s);
 
