@@ -271,8 +271,13 @@ bool ug2864hsweg01InitI2C(void)
     i2c_OLED_send_cmd(0x40); // Set Display Start Line
     i2c_OLED_send_cmd(0x8D); // Set Charge Pump
     i2c_OLED_send_cmd(0x14); // Charge Pump (0x10 External, 0x14 Internal DC/DC)
+#ifdef DISPLAY_ROTATE_180
+    i2c_OLED_send_cmd(0xA0); // Set Segment Re-Map
+    i2c_OLED_send_cmd(0xC0); // Set Com Output Scan Direction
+#else
     i2c_OLED_send_cmd(0xA1); // Set Segment Re-Map
     i2c_OLED_send_cmd(0xC8); // Set Com Output Scan Direction
+#endif
     i2c_OLED_send_cmd(0xDA); // Set COM Hardware Configuration
     i2c_OLED_send_cmd(0x12); // COM Hardware Configuration
     i2c_OLED_send_cmd(0x81); // Set Contrast
